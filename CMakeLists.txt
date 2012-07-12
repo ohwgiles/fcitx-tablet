@@ -7,7 +7,7 @@ include_directories (${FCITX4_FCITX_INCLUDE_DIRS})
 include_directories (${FCITX4_FCITX_CONFIG_INCLUDE_DIRS})
 include_directories (${FCITX4_FCITX_UTILS_INCLUDE_DIRS})
 
-add_definitions( -DLOCALEDIR=\"${CMAKE_INSTALL_PREFIX}/share/locale\" )
+add_definitions( -DLOCALEDIR=\"${CMAKE_INSTALL_PREFIX}/share/locale\" -std=gnu99)
 
 fcitx_add_addon(fcitx-tablet src/pen.c src/ime.c src/config.c src/version.c src/lxbi.c)
 
