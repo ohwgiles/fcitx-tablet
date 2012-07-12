@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include <fcitx/module.h>
 #include <fcitx/ime.h>
 #include <fcitx/instance.h>
@@ -25,7 +27,7 @@
 #include "pen.h"
 #include "config.h"
 #include "driver.h"
-
+#include "ime.h"
 //drivers
 #include "lxbi.h"
 
@@ -124,6 +126,15 @@ void FcitxTabletSetFd(void* arg) {
 		FcitxInstanceSetMaxFD(tablet->fcitx, tablet->driver.fd);
 }
 
+void PushCoordinate(TabletStrokes* s, pt_t newpt) {
+	*s->ptr++ = newpt;
+	if(s->ptr > &s->buffer[s->n]) { // if we overflow the buffer, increase it
+		int newsize = s->n + 1024;
+		s->buffer = (pt_t*) realloc(s->buffer, newsize);
+		s->ptr = &s->buffer[s->n+1];
+		s->n = newsize;
+	}
+}
 
 void FcitxTabletProcess(void* arg) {
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
@@ -146,19 +157,13 @@ void FcitxTabletProcess(void* arg) {
 				switch(e) {
 				case EV_PENDOWN:
 					break; // nothing
-				case EV_PENUP: // run recognition
-					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, 0);
+				case EV_PENUP:
+				{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
+					// a bit hacky, but gives the IME component some action
+					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
 					break;
-				case EV_POINT: {
-					TabletStrokes* s = &tablet->strokes;
-					*s->ptr++ = pt;
-					if(s->ptr > &s->buffer[s->n]) { // if we overflow the buffer
-						int newsize = s->n + 1024;
-						s->buffer = (pt_t*) realloc(s->buffer, newsize);
-						s->ptr = &s->buffer[s->n+1];
-						s->n = newsize;
-					}
-				}
+				case EV_POINT:
+					PushCoordinate(&tablet->strokes, pt);
 					break;
 				default:
 					FcitxLog(ERROR, "Driver returned unknown event: %d", e);
@@ -169,10 +174,24 @@ void FcitxTabletProcess(void* arg) {
 
 		{ // draw the stroke on the screen
 			TabletX* x = &tablet->x;
-			x->gcv.line_width = 15;
-			XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
-			XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
-			XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, 100, 100, 300, 300);
+			TabletStrokes* s = &tablet->strokes;
+			// We can only draw lines if we have at least 2 points
+			if(s->ptr >= &s->buffer[2]) {
+				// draw the background stroke
+				x->gcv.line_width = 15;
+				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
+				XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
+				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
+					XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, p[0].x, p[0].y, p[1].x, p[1].y);
+				}
+				// draw the foreground stroke
+				x->gcv.line_width = 15;
+				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
+				XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
+				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
+					XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, p[0].x, p[0].y, p[1].x, p[1].y);
+				}
+			}
 			XSync(x->dpy, 0);
 		}
 

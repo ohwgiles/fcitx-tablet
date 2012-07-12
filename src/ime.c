@@ -1,105 +1,41 @@
-#include <fcitx/ime.h>
-#include <fcitx/instance.h>
-#include <fcitx/candidate.h>
-
-void* FcitxTabletCreate(FcitxInstance* instance);
-void FcitxTabletDestroy(void* arg);
-void FcitxTabletReset(void* arg);
-INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int state);
-INPUT_RETURN_VALUE FcitxTabletGetCandWords(void *arg);
-boolean FcitxTabletInit(void*);
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <fcitx/ime.h>
 #include <fcitx-config/fcitx-config.h>
 #include <fcitx-config/xdg.h>
 #include <fcitx-config/hotkey.h>
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/utils.h>
 #include <fcitx-utils/utf8.h>
+#include <fcitx/candidate.h>
+#include <fcitx/ime.h>
 #include <fcitx/instance.h>
 #include <fcitx/context.h>
 #include <fcitx/keys.h>
 #include <fcitx/ui.h>
-#include <libintl.h>
-
 #include <fcitx/module.h>
 
 #include "pen.h"
-
+#include "ime.h"
 typedef struct {
 	char** stroke_buffer;
 	FcitxInstance* fcitx;
 } FcitxTabletIme;
 
-void* FcitxTabletImeCreate(FcitxInstance* instance) {
-	FcitxTabletIme* ime = (FcitxTabletIme*) fcitx_utils_malloc0(sizeof(FcitxTabletIme));
-	//LoadXkbConfig(tablet);
-	FcitxInstanceRegisterIM(
-				instance,
-				ime, //userdata
-				"Tablet",
-				"Tablet",
-				"Tablet",
-				FcitxTabletInit,
-				FcitxTabletReset,
-				FcitxTabletDoInput,
-				FcitxTabletGetCandWords,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				1,
-				"zh_CN"
-				);
-	FcitxLog(WARNING, "Calling InvokeFunction");
 
-	FcitxModuleFunctionArg args;
-	ime->stroke_buffer = InvokeFunction(instance, FCITX_TABLET, GETRESULTBUFFER, args);
-	FcitxLog(WARNING, "Tablet init ok");
-	return ime;
-}
-
-
-
-
-/*
-void* FcitxTabletDummyCreate(FcitxInstance* instance) {
-return instance;
-	FcitxTablet* tablet = (FcitxTablet*) fcitx_utils_malloc0(sizeof(FcitxTablet));
-	tablet->fcitx = instance;
-
-	FcitxLog(WARNING, "Tablet init ok");
-	LoadXkbConfig(tablet);
-	FcitxInstanceRegisterIM(
-				instance,
-				tablet,
-				"Tablet",
-				"Tablet",
-				"Tablet",
-				FcitxTabletInit,
-				FcitxTabletReset,
-				FcitxTabletDoInput,
-				FcitxTabletGetCandWords,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				1,
-				"zh_CN"
-				);
-	return instance;
-}
-
-*/
-
-INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int state) {
-	FcitxLog(WARNING, "FcitxTabletDoInput");
+INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int action) {
 	if(sym == FcitxKey_VoidSymbol) {
-		FcitxLog(WARNING, "got void symbol");
+		switch(action) {
+		case IME_RECOGNISE:
+			// call into recognition library, update candidate lists
+			break;
+		case IME_COMMIT:
+
+			break;
+		default:
+			FcitxLog(ERROR, "IME asked to perform unknown action");
+		}
 	}
 	return IRV_TO_PROCESS;
 }
@@ -236,13 +172,41 @@ static int FcitxTabletGetRawCursorPos(char * str, int upos)
 	}
 	return pos;
 }
-/*
-void FcitxTabletDestroy(void* arg)
+
+void FcitxTabletImeDestroy(void* arg)
 {
-}*/
+}
+
+void* FcitxTabletImeCreate(FcitxInstance* instance) {
+	FcitxTabletIme* ime = (FcitxTabletIme*) fcitx_utils_malloc0(sizeof(FcitxTabletIme));
+	//LoadXkbConfig(tablet);
+	FcitxInstanceRegisterIM(
+				instance,
+				ime, //userdata
+				"Tablet",
+				"Tablet",
+				"Tablet",
+				FcitxTabletInit,
+				FcitxTabletReset,
+				FcitxTabletDoInput,
+				FcitxTabletGetCandWords,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				1,
+				"zh_CN"
+				);
+	FcitxLog(WARNING, "Calling InvokeFunction");
+
+	FcitxModuleFunctionArg args;
+	ime->stroke_buffer = InvokeFunction(instance, FCITX_TABLET, GETRESULTBUFFER, args);
+	FcitxLog(WARNING, "Tablet init ok");
+	return ime;
+}
 
 
 FCITX_EXPORT_API FcitxIMClass ime = {
 	FcitxTabletImeCreate,
-	FcitxTabletDestroy
+	FcitxTabletImeDestroy
 };
