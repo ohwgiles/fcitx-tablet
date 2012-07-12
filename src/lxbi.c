@@ -9,20 +9,21 @@ void LxbiDestroy(void* ud) {
 
 }
 
-int LxbiPacketSize(void* ud) {
-	return 8;
-}
-
 FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
-	pt->x = 30;
-	pt->y = 120;
+	static int i = 0;
+	i++;
+	if(i == 8) { i = 0; return EV_NONE; }
+	pt->x = buffer[2*i];
+	pt->y = buffer[2*i+1];
 	return EV_POINT;
 }
 
 
 FcitxTabletDriver lxbi = {
 	LxbiCreate,
-	LxbiPacketSize,
+	8,
+	1234,
+	1234,
 	LxbiGetEvent,
 	LxbiDestroy
 };

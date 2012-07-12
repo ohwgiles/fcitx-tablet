@@ -73,7 +73,7 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		TabletDriver* d = &tablet->driver;
 		d->drv = &lxbi;
 		d->userdata = d->drv->Create();
-		d->packet = (char*) malloc(d->drv->PacketSize(d->userdata));
+		d->packet = (char*) malloc(d->drv->packet_size);
 
 		d->fd = open(tablet->conf.devicePath, O_RDONLY);
 		if(d->fd < 0) {
@@ -143,7 +143,7 @@ void FcitxTabletProcess(void* arg) {
 
 		{ // first read a packet from the raw device
 			int n = 0;
-			const int pktsize = d->drv->PacketSize(d->userdata);
+			const int pktsize = d->drv->packet_size;
 			do {
 				n += read(d->fd, &d->packet[n], pktsize - n);
 			} while(n < pktsize);

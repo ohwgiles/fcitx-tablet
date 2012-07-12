@@ -12,7 +12,9 @@ typedef enum {
 
 typedef struct _FcitxTabletDriver {
 	void* (*Create)();
-	int (*PacketSize)(void*);
+	unsigned packet_size;
+	unsigned x_max;
+	unsigned y_max;
 	FcitxTabletDriverEvent (*GetEvent)(void*, const char*, pt_t*);
 	void (*Destroy)(void*);
 } FcitxTabletDriver;
