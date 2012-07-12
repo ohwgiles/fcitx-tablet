@@ -1,0 +1,7 @@
+[InputMethod]
+UniqueName=tablet
+_Name=Tablet
+IconName=tablet
+Priority=50
+LangCode=zh_CN
+Parent=fcitx-tablet-ime

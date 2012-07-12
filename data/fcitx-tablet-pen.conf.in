@@ -1,0 +1,10 @@
+[Addon]
+Name=fcitx-tablet-pen
+_GeneralName=Tablet Pen Module
+_Comment=Fcitx Tablet Interface Module
+Category=Module
+Enabled=True
+Library=fcitx-tablet.so
+Type=SharedLibrary
+Priority=30
+Advance=True

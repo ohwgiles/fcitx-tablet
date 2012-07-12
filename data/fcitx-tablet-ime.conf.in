@@ -1,0 +1,9 @@
+[Addon]
+Name=fcitx-tablet-ime
+_GeneralName=Tablet
+_Comment=Tablet Input Method For Fcitx
+Category=InputMethod
+Enabled=True
+Library=fcitx-tablet.so
+Type=SharedLibrary
+IMRegisterMethod=ConfigFile

@@ -1,0 +1,8 @@
+#ifndef FCITX_TABLET_PEN_H
+#define FCITX_TABLET_PEN_H
+
+#define FCITX_TABLET_NAME "fcitx-tablet-pen"
+#define FCITX_TABLET_GETRESULTBUFFER 0
+#define FCITX_TABLET_GETRESULTBUFFER_RETURNTYPE char**
+
+#endif

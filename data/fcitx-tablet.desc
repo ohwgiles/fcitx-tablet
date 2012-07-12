@@ -1,0 +1,4 @@
+[Tablet/DevicePath]
+Type=String
+Description=Path to Human Interface Device (make sure it's readable)
+DefaultValue=/dev/hidraw0
