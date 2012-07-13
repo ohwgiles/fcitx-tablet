@@ -20,9 +20,46 @@
  *
  **************************************************************************/
 
-// These definitions are required to export a function between modules
+#include <fcitx/instance.h>
+#include <X11/Xlib.h>
+#include "config.h"
+#include "driver.h"
+#include "point.h"
+#include "recog.h"
+
 #define FCITX_TABLET_NAME "fcitx-tablet-pen"
-#define FCITX_TABLET_GETRESULTBUFFER 0
-#define FCITX_TABLET_GETRESULTBUFFER_RETURNTYPE pt_t**
+
+// Persistent storage for data relating to X drawing
+typedef struct {
+	Display* dpy;
+	GC gc;
+	XGCValues gcv;
+} TabletX;
+
+// Persistent storage for data relating to the tablet driver
+typedef struct {
+	FcitxTabletDriver* drv;
+	void* userdata; // the driver's persistent data
+	char* packet; // buffer for a packet from the driver
+	int fd;
+} TabletDriver;
+
+// Persistent storage for the actual strokes. The points should be
+// scaled to screen resolution boundaries before being stored here
+typedef struct {
+	pt_t* buffer; // start of buffer
+	pt_t* ptr; // moving pointer
+	unsigned n;
+} TabletStrokes;
+
+// Wrapper struct to hold all the above
+typedef struct {
+	FcitxTabletConfig conf;
+	TabletX x;
+	TabletDriver driver;
+	FcitxTabletRecogniser* recog;
+	TabletStrokes strokes;
+	FcitxInstance* fcitx;
+} FcitxTabletPen;
 
 #endif

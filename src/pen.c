@@ -39,42 +39,10 @@
 // contains routines for drawing on the X display and implements a timeout
 // to instruct the IME to commit the most likely candidate
 
-// Persistent storage for data relating to X drawing
-typedef struct {
-	Display* dpy;
-	GC gc;
-	XGCValues gcv;
-} TabletX;
 
-// Persistent storage for data relating to the tablet driver
-typedef struct {
-	FcitxTabletDriver* drv;
-	void* userdata; // the driver's persistent data
-	char* packet; // buffer for a packet from the driver
-	int fd;
-} TabletDriver;
-
-// Persistent storage for the actual strokes. The points should be
-// scaled to screen resolution boundaries before being stored here
-typedef struct {
-	pt_t* buffer; // start of buffer
-	pt_t* ptr; // moving pointer
-	unsigned n;
-} TabletStrokes;
-
-// Wrapper struct to hold all the above
-typedef struct {
-	FcitxTabletConfig conf;
-	TabletX x;
-	TabletDriver driver;
-	TabletStrokes strokes;
-	FcitxInstance* fcitx;
-} FcitxTabletPen;
-
-// An interface for the IME, which needs the strokes in order to call into
-// the recognition code
-pt_t** GetStrokeBufferLocation(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
-	return &tablet->strokes.buffer;
+// Access the config from other modules
+FcitxTabletPen* GetConfig(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
+	return tablet;
 }
 
 // Drivers, see driver.h
@@ -122,11 +90,6 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 	}
 
 	tablet->fcitx = instance;
-
-	// Expose the GetStrokeBufferLocation function so the IME can call it
-	FcitxAddon* tablet_addon = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME);
-	AddFunction(tablet_addon, GetStrokeBufferLocation);
-
 	return tablet;
 }
 

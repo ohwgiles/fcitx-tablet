@@ -28,15 +28,22 @@
 #include "pen.h"
 #include "ime.h"
 #include "point.h"
+#include "recog.h"
+#include "config.h"
 
 // ime.c
 // This file contains the fcitx input method object. It receives notifications
 // from the tablet driver, calls the recognition code and updates candidates
 // or commits the string as appropriate
 
+// Recognisers, see recog.h
+extern FcitxTabletRecogniser recogfork;
+
 typedef struct {
+	FcitxTabletConfig* config;
 	// Location of the stored pen strokes, to pass through to the recogniser
 	pt_t** stroke_buffer;
+	FcitxTabletRecogniser* recog;
 	FcitxInstance* fcitx;
 } FcitxTabletIme;
 
@@ -190,10 +197,13 @@ void FcitxTabletImeDestroy(void* arg)
 }
 
 void* FcitxTabletImeCreate(FcitxInstance* instance) {
+	FcitxModuleFunctionArg args;
+	FcitxTabletPen* ud = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME)->addonInstance;
+
 	FcitxTabletIme* ime = fcitx_utils_new(FcitxTabletIme);
 	FcitxInstanceRegisterIM(
 				instance,
-				ime, //userdata
+				ud, //userdata
 				"Tablet",
 				"Tablet",
 				"Tablet",
@@ -209,9 +219,10 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				"zh_CN"
 				);
 
-	// Get the location of the stroke buffer from the tablet event module
-	FcitxModuleFunctionArg args;
-	ime->stroke_buffer = (pt_t**) InvokeFunction(instance, FCITX_TABLET, GETRESULTBUFFER, args);
+	// instantiate the recogniser
+	// TODO select from config
+	ud->recog = ime->recog = recogfork.Create(&ud->conf, DisplayWidth(ud->x.dpy, 0), DisplayHeight(ud->x.dpy, 0));
+
 	return ime;
 }
 
