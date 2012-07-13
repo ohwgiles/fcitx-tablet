@@ -17,7 +17,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  **************************************************************************/
-#include "lxbi.h"
+
+#include "driver.h"
 
 // lxbi.c
 // This is a simple tablet driver
