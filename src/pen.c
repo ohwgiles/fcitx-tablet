@@ -1,56 +1,69 @@
+/**************************************************************************
+ *
+ *  fcitx-tablet : graphics tablet input for fcitx input method framework
+ *  Copyright 2012  Oliver Giles
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ **************************************************************************/
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <fcitx/module.h>
-#include <fcitx/ime.h>
-#include <fcitx/instance.h>
-#include <fcitx/candidate.h>
-#include <fcitx-config/fcitx-config.h>
-#include <fcitx-config/xdg.h>
-#include <fcitx-config/hotkey.h>
-#include <fcitx-utils/log.h>
-#include <fcitx-utils/utils.h>
-#include <fcitx-utils/utf8.h>
-#include <fcitx/instance.h>
-#include <fcitx/context.h>
-#include <fcitx/keys.h>
-#include <fcitx/ui.h>
-#include <libintl.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
 #include <X11/Xlib.h>
-
+#include <fcitx/module.h>
+#include <fcitx-utils/log.h>
+#include <fcitx/context.h>
+#include <fcntl.h>
 #include "pen.h"
 #include "config.h"
 #include "driver.h"
 #include "ime.h"
-//drivers
-#include "lxbi.h"
 
+// pen.c
+// This file contains the fcitx event module. It's needed to add an fd to
+// the main select() loop to catch events from the tablet device. It also
+// contains routines for drawing on the X display and implements a timeout
+// to instruct the IME to commit the most likely candidate
+
+// Persistent storage for data relating to X drawing
 typedef struct {
 	Display* dpy;
 	GC gc;
 	XGCValues gcv;
 } TabletX;
 
+// Persistent storage for data relating to the tablet driver
 typedef struct {
 	FcitxTabletDriver* drv;
-	void* userdata;
-	char* packet;
+	void* userdata; // the driver's persistent data
+	char* packet; // buffer for a packet from the driver
 	int fd;
 } TabletDriver;
 
+// Persistent storage for the actual strokes. The points should be
+// scaled to screen resolution boundaries before being stored here
 typedef struct {
-	pt_t* buffer;
-	pt_t* ptr;
+	pt_t* buffer; // start of buffer
+	pt_t* ptr; // moving pointer
 	unsigned n;
 } TabletStrokes;
 
-typedef struct _FcitxTabletPen {
+// Wrapper struct to hold all the above
+typedef struct {
 	FcitxTabletConfig conf;
 	TabletX x;
 	TabletDriver driver;
@@ -58,16 +71,20 @@ typedef struct _FcitxTabletPen {
 	FcitxInstance* fcitx;
 } FcitxTabletPen;
 
-
+// An interface for the IME, which needs the strokes in order to call into
+// the recognition code
 pt_t** GetStrokeBufferLocation(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
 	return &tablet->strokes.buffer;
 }
+
+// Drivers, see driver.h
+extern FcitxTabletDriver lxbi;
 
 
 void* FcitxTabletCreate(FcitxInstance* instance) {
 	FcitxTabletPen* tablet = fcitx_utils_new(FcitxTabletPen);
 	FcitxTabletLoadConfig(&tablet->conf);
-	// todo select driver from config
+	// TODO select driver from config, currently using lxbi
 
 	{ // Initialise the driver
 		TabletDriver* d = &tablet->driver;
@@ -104,15 +121,9 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		s->ptr = s->buffer;
 	}
 
-	//XGrabButton(TabletModule->dpy, 1, AnyModifier, DefaultRootWindow(TabletModule->dpy), True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
-
-	FcitxLog(WARNING, "TabletModule init ok");
-	FcitxLog(WARNING, "Openining pipe");
-//	TabletModule->ic = FcitxInstanceCreateIC(instance, 1, NULL);
-
 	tablet->fcitx = instance;
 
-	//return instance;
+	// Expose the GetStrokeBufferLocation function so the IME can call it
 	FcitxAddon* tablet_addon = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME);
 	AddFunction(tablet_addon, GetStrokeBufferLocation);
 
@@ -148,7 +159,6 @@ void FcitxTabletProcess(void* arg) {
 				n += read(d->fd, &d->packet[n], pktsize - n);
 			} while(n < pktsize);
 		}
-		//FcitxLog(WARNING, "Read %d bytes", n);
 
 		{ // then send it to the driver to convert into events
 			FcitxTabletDriverEvent e;
@@ -158,8 +168,7 @@ void FcitxTabletProcess(void* arg) {
 				case EV_PENDOWN:
 					break; // nothing
 				case EV_PENUP:
-				{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
-					// a bit hacky, but gives the IME component some action
+					{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
 					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
 					break;
 				case EV_POINT:
@@ -180,12 +189,12 @@ void FcitxTabletProcess(void* arg) {
 				// draw the background stroke
 				x->gcv.line_width = 15;
 				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
-				XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
+				XSetForeground(x->dpy, x->gc, WhitePixel(x->dpy, DefaultScreen(x->dpy)));
 				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
 					XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, p[0].x, p[0].y, p[1].x, p[1].y);
 				}
 				// draw the foreground stroke
-				x->gcv.line_width = 15;
+				x->gcv.line_width = 8;
 				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
 				XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
 				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
@@ -200,7 +209,6 @@ void FcitxTabletProcess(void* arg) {
 }
 
 void FcitxTabletDestroy(void* arg) {
-	FcitxLog(WARNING, "FcitxTabletDestroy");
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
 	XFreeGC(tablet->x.dpy, tablet->x.gc);
 	XCloseDisplay(tablet->x.dpy);
@@ -209,9 +217,7 @@ void FcitxTabletDestroy(void* arg) {
 	free(tablet->strokes.buffer);
 }
 
-
-
-
+// Instantiate the event module
 FCITX_EXPORT_API
 FcitxModule module = {
 	FcitxTabletCreate,

@@ -1,30 +1,50 @@
+/**************************************************************************
+ *
+ *  fcitx-tablet : graphics tablet input for fcitx input method framework
+ *  Copyright 2012  Oliver Giles
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ **************************************************************************/
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <fcitx-config/fcitx-config.h>
-#include <fcitx-config/xdg.h>
-#include <fcitx-config/hotkey.h>
 #include <fcitx-utils/log.h>
-#include <fcitx-utils/utils.h>
-#include <fcitx-utils/utf8.h>
 #include <fcitx/candidate.h>
-#include <fcitx/ime.h>
-#include <fcitx/instance.h>
 #include <fcitx/context.h>
-#include <fcitx/keys.h>
-#include <fcitx/ui.h>
 #include <fcitx/module.h>
-
 #include "pen.h"
 #include "ime.h"
+#include "point.h"
+
+// ime.c
+// This file contains the fcitx input method object. It receives notifications
+// from the tablet driver, calls the recognition code and updates candidates
+// or commits the string as appropriate
+
 typedef struct {
-	char** stroke_buffer;
+	// Location of the stored pen strokes, to pass through to the recogniser
+	pt_t** stroke_buffer;
 	FcitxInstance* fcitx;
 } FcitxTabletIme;
 
 
 INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int action) {
+	// The event module uses VoidSymbol as a trigger, this means other input methods
+	// will ignore it, actual actions will be passed in the action variable,
+	// see ImeAction in ime.h
 	if(sym == FcitxKey_VoidSymbol) {
 		switch(action) {
 		case IME_RECOGNISE:
@@ -41,6 +61,7 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 }
 
 
+// TODO maybe not needed
 boolean FcitxTabletInit(void* arg) {
 	//FcitxTablet* tablet = (FcitxTablet*) arg;
 	//FcitxLog(WARNING, "FcitxTabletInit, xkb layout: %s", tablet->conf.xkbLayout);
@@ -48,13 +69,14 @@ boolean FcitxTabletInit(void* arg) {
 	return true;
 }
 
+// TODO maybe not needed
 void FcitxTabletReset(void* arg) {
 	FcitxLog(WARNING, "FcitxTabletReset");
 }
 
 
-INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg)
-{
+// TODO maybe not needed, tablet input is one character at a time
+INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg) {
 	FcitxLog(WARNING, "FcitxTabletGetCandWords");
 
 	/*
@@ -121,8 +143,8 @@ INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg)
 	return IRV_DISPLAY_CANDWORDS;
 }
 
-INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWord)
-{/*
+INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWord) {
+/*
 	 FcitxTablet* chewing = (FcitxTablet*) candWord->owner;
 	 TabletCandWord* w = (TabletCandWord*) candWord->priv;
 	 FcitxGlobalConfig* config = FcitxInstanceGetGlobalConfig(chewing->owner);
@@ -163,23 +185,12 @@ INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWor
 
 }
 
-static int FcitxTabletGetRawCursorPos(char * str, int upos)
-{
-	unsigned int i;
-	int pos = 0;
-	for (i = 0; i < upos; i++) {
-		pos += fcitx_utf8_char_len(fcitx_utf8_get_nth_char(str, i));
-	}
-	return pos;
-}
-
 void FcitxTabletImeDestroy(void* arg)
 {
 }
 
 void* FcitxTabletImeCreate(FcitxInstance* instance) {
-	FcitxTabletIme* ime = (FcitxTabletIme*) fcitx_utils_malloc0(sizeof(FcitxTabletIme));
-	//LoadXkbConfig(tablet);
+	FcitxTabletIme* ime = fcitx_utils_new(FcitxTabletIme);
 	FcitxInstanceRegisterIM(
 				instance,
 				ime, //userdata
@@ -197,11 +208,10 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				1,
 				"zh_CN"
 				);
-	FcitxLog(WARNING, "Calling InvokeFunction");
 
+	// Get the location of the stroke buffer from the tablet event module
 	FcitxModuleFunctionArg args;
-	ime->stroke_buffer = InvokeFunction(instance, FCITX_TABLET, GETRESULTBUFFER, args);
-	FcitxLog(WARNING, "Tablet init ok");
+	ime->stroke_buffer = (pt_t**) InvokeFunction(instance, FCITX_TABLET, GETRESULTBUFFER, args);
 	return ime;
 }
 
