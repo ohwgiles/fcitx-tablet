@@ -21,12 +21,13 @@
  **************************************************************************/
 
 #include "point.h"
+#include "config.h"
 
 // A recogniser takes a buffer of strokes and converts it into a
 // sorted list of UTF-8 candidates
 
 typedef struct {
-	void* (*Create)();
+	void* (*Create)(FcitxTabletConfig* cfg, int x_max, int y_max);
 	char* (*Process)(void*, pt_t*, int);
 	void (*Destroy)(void*);
 } FcitxTabletRecogniser;
