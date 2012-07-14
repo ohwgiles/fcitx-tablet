@@ -36,14 +36,10 @@
 // from the tablet driver, calls the recognition code and updates candidates
 // or commits the string as appropriate
 
-// Recognisers, see recog.h
-extern FcitxTabletRecogniser recogfork;
-
 typedef struct {
 	FcitxTabletConfig* config;
 	// Location of the stored pen strokes, to pass through to the recogniser
 	pt_t** stroke_buffer;
-	FcitxTabletRecogniser* recog;
 	FcitxInstance* fcitx;
 } FcitxTabletIme;
 
@@ -219,9 +215,6 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				"zh_CN"
 				);
 
-	// instantiate the recogniser
-	// TODO select from config
-	ud->recog = ime->recog = recogfork.Create(&ud->conf, DisplayWidth(ud->x.dpy, 0), DisplayHeight(ud->x.dpy, 0));
 
 	return ime;
 }

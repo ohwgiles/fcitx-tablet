@@ -48,6 +48,9 @@ FcitxTabletPen* GetConfig(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
 // Drivers, see driver.h
 extern FcitxTabletDriver lxbi;
 
+// Recognisers, see recog.h
+extern FcitxTabletRecogniser recogfork;
+
 
 void* FcitxTabletCreate(FcitxInstance* instance) {
 	FcitxTabletPen* tablet = fcitx_utils_new(FcitxTabletPen);
@@ -87,6 +90,11 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		s->n = 2048;
 		s->buffer = (pt_t*) malloc(sizeof(pt_t) * s->n);
 		s->ptr = s->buffer;
+	}
+
+	{ // instantiate the recogniser
+		// TODO select from config
+		tablet->recog = recogfork.Create(&tablet->conf, DisplayWidth(tablet->x.dpy, 0), DisplayHeight(tablet->x.dpy, 0));
 	}
 
 	tablet->fcitx = instance;
