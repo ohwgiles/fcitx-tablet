@@ -18,13 +18,18 @@
  *
  **************************************************************************/
 
+#include <fcitx-utils/utils.h>
 #include "driver.h"
 
 // lxbi.c
 // This is a simple tablet driver
 
+typedef enum { LXBI_UP, LXBI_DOWN } LxbiState;
+
 void* LxbiCreate() {
-	return 0;
+	LxbiState* st = fcitx_utils_new(LxbiState);
+	*st = LXBI_UP;
+	return st;
 }
 
 void LxbiDestroy(void* ud) {
@@ -32,11 +37,23 @@ void LxbiDestroy(void* ud) {
 }
 
 FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
-	static int i = 0;
-	i++;
-	if(i == 8) { i = 0; return EV_NONE; }
-	pt->x = buffer[2*i];
-	pt->y = buffer[2*i+1];
+	LxbiState* st = (LxbiState*) ud;
+	static const unsigned short XMASK = 0x281a;
+	static const unsigned short YMASK = 0x3010;
+	short x = ( (buffer[2]<<8) | (0xff&buffer[1]) ) ^ XMASK;
+	short y = ( (buffer[4]<<8) | (0xff&buffer[3]) ) ^ YMASK;
+	if(x == 0 && y == 0) {
+		if(*st == LXBI_UP) return EV_NONE;
+		*st = LXBI_UP;
+		return EV_PENUP;
+	}
+	if(*st == LXBI_UP) {
+		*st = LXBI_DOWN;
+		return EV_PENDOWN;
+	}
+	// x E (130,1437), y E (394,1230)
+	pt->x = x - 130;
+	pt->y = y - 394;
 	return EV_POINT;
 }
 
@@ -44,8 +61,9 @@ FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
 FcitxTabletDriver lxbi = {
 	LxbiCreate,
 	8,
-	1234,
-	1234,
+	1437,
+	1230,
 	LxbiGetEvent,
 	LxbiDestroy
 };
+
