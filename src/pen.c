@@ -82,7 +82,7 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		x->gcv.cap_style = CapRound;
 		x->gcv.join_style = JoinRound;
 		x->gc = XCreateGC(x->dpy, DefaultRootWindow(x->dpy), GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &x->gcv);
-
+		XSetForeground(x->dpy, x->gc, WhitePixel(x->dpy, DefaultScreen(x->dpy)));
 	}
 
 	{ // Initialise the stroke buffer
@@ -109,11 +109,18 @@ void FcitxTabletSetFd(void* arg) {
 }
 
 void PushCoordinate(TabletStrokes* s, pt_t newpt) {
+	if(newpt.x == 0 && newpt.y == 0)
+		FcitxLog(WARNING, "Pushing zero pt");
 	*s->ptr++ = newpt;
-	if(s->ptr > &s->buffer[s->n]) { // if we overflow the buffer, increase it
+	if(s->ptr == &s->buffer[s->n]) { // if we overflow the buffer, increase it
+		FcitxLog(WARNING, "resizing");
 		int newsize = s->n + 1024;
-		s->buffer = (pt_t*) realloc(s->buffer, newsize);
-		s->ptr = &s->buffer[s->n+1];
+		pt_t* newbuf = (pt_t*) realloc(s->buffer, sizeof(pt_t)*newsize);
+		if(newbuf == NULL)
+			FcitxLog(ERROR, "Failed to allocate more stroke memory");
+//		memmove(newbuf, s->buffer, s->n);
+		s->buffer = newbuf;
+		s->ptr = &s->buffer[s->n];
 		s->n = newsize;
 	}
 }
@@ -131,6 +138,7 @@ void FcitxTabletProcess(void* arg) {
 			} while(n < pktsize);
 		}
 
+		boolean redraw = false;
 		{ // then send it to the driver to convert into events
 			FcitxTabletDriverEvent e;
 			pt_t pt;
@@ -142,9 +150,17 @@ void FcitxTabletProcess(void* arg) {
 					{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
 					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
 					break;
-				case EV_POINT:
+				case EV_POINT: {
+					TabletX* x = &tablet->x;
+					TabletStrokes* s = &tablet->strokes;
+					pt.x = (float) pt.x * (float) DisplayWidth(x->dpy,0) / (float) d->drv->x_max;
+					pt.y = (float) pt.y * (float) DisplayHeight(x->dpy,0) / (float) d->drv->y_max;
+					if(s->ptr > s->buffer && PT_ISVALID(s->ptr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
+						XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, s->ptr[-1].x, s->ptr[-1].y, pt.x, pt.y);
+						redraw = true;
+					}
 					PushCoordinate(&tablet->strokes, pt);
-					break;
+				} break;
 				default:
 					FcitxLog(ERROR, "Driver returned unknown event: %d", e);
 					break;
@@ -152,27 +168,8 @@ void FcitxTabletProcess(void* arg) {
 			}
 		}
 
-		{ // draw the stroke on the screen
-			TabletX* x = &tablet->x;
-			TabletStrokes* s = &tablet->strokes;
-			// We can only draw lines if we have at least 2 points
-			if(s->ptr >= &s->buffer[2]) {
-				// draw the background stroke
-				x->gcv.line_width = 15;
-				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
-				XSetForeground(x->dpy, x->gc, WhitePixel(x->dpy, DefaultScreen(x->dpy)));
-				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
-					XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, p[0].x, p[0].y, p[1].x, p[1].y);
-				}
-				// draw the foreground stroke
-				x->gcv.line_width = 8;
-				XChangeGC(x->dpy, x->gc, GCLineWidth, &x->gcv);
-				XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
-				for(pt_t*p = s->buffer; &p[1] != s->ptr; ++p) {
-					XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, p[0].x, p[0].y, p[1].x, p[1].y);
-				}
-			}
-			XSync(x->dpy, 0);
+		if(redraw) { // draw the stroke on the screen
+			XSync(tablet->x.dpy, 0);
 		}
 
 		FD_CLR(d->fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
