@@ -19,36 +19,50 @@
  **************************************************************************/
 
 #include <fcitx-utils/utils.h>
+#include <fcitx-utils/log.h>
 #include "driver.h"
 
 // lxbi.c
 // This is a simple tablet driver
 
 typedef enum { LXBI_UP, LXBI_DOWN } LxbiState;
+typedef struct {
+	short last_x;
+	short last_y;
+	LxbiState st;
+} Lxbi;
 
 void* LxbiCreate() {
-	LxbiState* st = fcitx_utils_new(LxbiState);
-	*st = LXBI_UP;
-	return st;
+	Lxbi* lx = fcitx_utils_new(Lxbi);
+	lx->st = LXBI_UP;
+	FcitxLog(WARNING, "LxbiCreate");
+	return lx;
 }
 
 void LxbiDestroy(void* ud) {
-
+	Lxbi* lx = (Lxbi*) ud;
+	free(lx);
 }
 
 FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
-	LxbiState* st = (LxbiState*) ud;
+	Lxbi* lx = (Lxbi*) ud;
 	static const unsigned short XMASK = 0x281a;
 	static const unsigned short YMASK = 0x3010;
 	short x = ( (buffer[2]<<8) | (0xff&buffer[1]) ) ^ XMASK;
 	short y = ( (buffer[4]<<8) | (0xff&buffer[3]) ) ^ YMASK;
+	//collapse repeated events
+	if(x == lx->last_x && y == lx->last_y) return EV_NONE;
+	lx->last_x = x;
+	lx->last_y = y;
+	//FcitxLog(WARNING, "x: %d, y: %d", x, y);
+	//return EV_NONE;
 	if(x == 0 && y == 0) {
-		if(*st == LXBI_UP) return EV_NONE;
-		*st = LXBI_UP;
+		if(lx->st == LXBI_UP) return EV_NONE;
+		lx->st = LXBI_UP;
 		return EV_PENUP;
 	}
-	if(*st == LXBI_UP) {
-		*st = LXBI_DOWN;
+	if(lx->st == LXBI_UP) {
+		lx->st = LXBI_DOWN;
 		return EV_PENDOWN;
 	}
 	// x E (130,1437), y E (394,1230)
@@ -61,8 +75,8 @@ FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
 FcitxTabletDriver lxbi = {
 	LxbiCreate,
 	8,
-	1437,
-	1230,
+	1307,
+	836,
 	LxbiGetEvent,
 	LxbiDestroy
 };
