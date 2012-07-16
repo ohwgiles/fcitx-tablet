@@ -48,9 +48,11 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 	// The event module uses VoidSymbol as a trigger, this means other input methods
 	// will ignore it, actual actions will be passed in the action variable,
 	// see ImeAction in ime.h
+	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
 	if(sym == FcitxKey_VoidSymbol) {
 		switch(action) {
 		case IME_RECOGNISE:
+			tablet->recog->Process(tablet->recog_ud, tablet->strokes.buffer, (tablet->strokes.ptr - tablet->strokes.buffer));
 			// call into recognition library, update candidate lists
 			break;
 		case IME_COMMIT:
@@ -193,7 +195,6 @@ void FcitxTabletImeDestroy(void* arg)
 }
 
 void* FcitxTabletImeCreate(FcitxInstance* instance) {
-	FcitxModuleFunctionArg args;
 	FcitxTabletPen* ud = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME)->addonInstance;
 
 	FcitxTabletIme* ime = fcitx_utils_new(FcitxTabletIme);

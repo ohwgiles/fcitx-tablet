@@ -58,6 +58,7 @@ typedef struct {
 	TabletX x;
 	TabletDriver driver;
 	FcitxTabletRecogniser* recog;
+	void* recog_ud;
 	TabletStrokes strokes;
 	FcitxInstance* fcitx;
 } FcitxTabletPen;

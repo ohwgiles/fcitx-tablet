@@ -31,12 +31,16 @@
 // reply, following which it will output its results in UTF-8 in order of
 // most likely to least likely. It will then block on stdin waiting for the
 // next message.
+#include <sys/stat.h>
+#include <fcntl.h>
 
 typedef struct {
 	int fd_strokes[2];
 	int fd_candidates[2];
 	float xsf;
 	float ysf;
+	char* buffer;
+	int bufsize;
 } RecogForkData;
 
 void* RecogForkCreate(FcitxTabletConfig* cfg, int x_max, int y_max) {
@@ -46,26 +50,38 @@ void* RecogForkCreate(FcitxTabletConfig* cfg, int x_max, int y_max) {
 	// todo read path to extern app from cfg
 	pid_t pid;
 	// open pipes
-	if(pipe(d->fd_strokes) < 0 || pipe(d->fd_candidates) < 0)
+	if(pipe(d->fd_strokes) < 0)
+		return FcitxLog(ERROR, "pipe failed"), NULL;
+	if(pipe(d->fd_candidates) < 0)
 		return FcitxLog(ERROR, "pipe failed"), NULL;
 	// fork
 	if((pid = fork()) < 0)
 		return FcitxLog(ERROR, "fork failed"), NULL;
 
 	if(pid == 0) { // child
-		if(d->fd_strokes[0] != STDIN_FILENO) {
-			dup2(d->fd_strokes[0], STDIN_FILENO);
-			close(d->fd_strokes[0]);
-		}
+		close(d->fd_candidates[0]);
+		close(d->fd_strokes[1]);
+		FcitxLog(ERROR, "stdout_fileno: %d", STDOUT_FILENO);
 		if(d->fd_candidates[1] != STDOUT_FILENO) {
 			dup2(d->fd_candidates[1], STDOUT_FILENO);
 			close(d->fd_candidates[1]);
 		}
+		if(d->fd_strokes[0] != STDIN_FILENO) {
+			dup2(d->fd_strokes[0], STDIN_FILENO);
+			close(d->fd_strokes[0]);
+		}
 		if(execl("./ccpipe","./ccpipe", NULL) < 0)
 			return FcitxLog(ERROR, "execl failed"), NULL;
+		//shouldn't get here
+		exit(1);
 	}
 
-	return 0;
+	close(d->fd_candidates[1]);
+	close(d->fd_strokes[0]);
+
+	d->buffer = (char*) malloc(1024);
+	d->bufsize = 1024;
+	return d;
 }
 
 void RecogForkDestroy(void* ud) {
@@ -74,13 +90,42 @@ void RecogForkDestroy(void* ud) {
 
 char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	RecogForkData* d = (RecogForkData*) ud;
-	write(d->fd_strokes[1], &nPoints, 2);
-	for(int i=0; i<nPoints; ++i) {
-		char x = d->xsf * points[i].x;
-		char y = d->ysf * points[i].y;
-		write(d->fd_strokes[1], &x, 1);
-		write(d->fd_strokes[1], &y, 1);
+	short msgsize = nPoints * 2;
+	if(d->bufsize < msgsize+2) {
+		d->bufsize += 1024;
+		d->buffer = (char*) realloc(d->buffer, d->bufsize);
 	}
+	((short*) d->buffer)[0] = msgsize;
+
+	char* p = &d->buffer[2];
+	for(int i=0; i<nPoints; ++i) {
+		if(!PT_ISVALID(points[i])) {
+			FcitxLog(WARNING, "writing break pt");
+			*p++ = 0xff;
+			*p++ = 0xff;
+		} else {
+			*p++ = d->xsf * points[i].x;
+			*p++ = d->ysf * points[i].y;
+		}
+	}
+	write(d->fd_strokes[1], d->buffer, msgsize+2);
+	int ofd = open("/tmp/strokes.dat", O_CREAT|O_TRUNC|O_WRONLY);
+	write(ofd, d->buffer, msgsize+2);
+	close(ofd);
+
+
+//	return 0;
+
+	char result[30];
+	short sz = 0;
+	if(read(d->fd_candidates[0], &sz, 2) != 2)
+		FcitxLog(ERROR, "Couldn't read length");
+	FcitxLog(WARNING, "Starting read");
+	int n = read(d->fd_candidates[0], result, sz);
+	if(n < 0) perror("read candidates");
+
+	FcitxLog(WARNING, "received %d bytes (expecting %d)", n, sz);
+	FcitxLog(WARNING, "str: %s", result);
 	return 0;
 }
 
