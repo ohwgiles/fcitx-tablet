@@ -27,7 +27,7 @@
 // sorted list of UTF-8 candidates
 
 typedef struct {
-	void* (*Create)(FcitxTabletConfig* cfg, int x_max, int y_max);
+	void* (*Create)(FcitxTabletConfig* cfg);
 	char* (*Process)(void*, pt_t*, int);
 	void (*Destroy)(void*);
 } FcitxTabletRecogniser;

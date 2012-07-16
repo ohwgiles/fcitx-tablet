@@ -95,7 +95,7 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 	{ // instantiate the recogniser
 		// TODO select from config
 		tablet->recog = &recogfork;
-		tablet->recog_ud = recogfork.Create(&tablet->conf, DisplayWidth(tablet->x.dpy, 0), DisplayHeight(tablet->x.dpy, 0));
+		tablet->recog_ud = recogfork.Create(&tablet->conf);
 	}
 
 	tablet->fcitx = instance;

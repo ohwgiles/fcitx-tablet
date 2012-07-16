@@ -17,9 +17,10 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  **************************************************************************/
-
-#include "recog.h"
+#include <limits.h>
 #include <fcitx-utils/log.h>
+#include "recog.h"
+
 // fork.c
 // A recogniser that forks an external program
 
@@ -37,16 +38,12 @@
 typedef struct {
 	int fd_strokes[2];
 	int fd_candidates[2];
-	float xsf;
-	float ysf;
 	char* buffer;
 	int bufsize;
 } RecogForkData;
 
-void* RecogForkCreate(FcitxTabletConfig* cfg, int x_max, int y_max) {
+void* RecogForkCreate(FcitxTabletConfig* cfg) {
 	RecogForkData* d = fcitx_utils_new(RecogForkData);
-	d->xsf = 254.0 / x_max;
-	d->ysf = 254.0 / y_max;
 	// todo read path to extern app from cfg
 	pid_t pid;
 	// open pipes
@@ -85,17 +82,40 @@ void* RecogForkCreate(FcitxTabletConfig* cfg, int x_max, int y_max) {
 }
 
 void RecogForkDestroy(void* ud) {
-
+	RecogForkData* d = (RecogForkData*) ud;
+	free(d);
 }
 
 char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	RecogForkData* d = (RecogForkData*) ud;
-	short msgsize = nPoints * 2;
+	short msgsize = nPoints * 2; // two chars for each point
 	if(d->bufsize < msgsize+2) {
 		d->bufsize += 1024;
 		d->buffer = (char*) realloc(d->buffer, d->bufsize);
 	}
+	// everything is at least 16 bit aligned so this is safe
 	((short*) d->buffer)[0] = msgsize;
+
+	// get bounding box
+	short xmin=SHRT_MAX,xmax=SHRT_MIN,ymin=SHRT_MAX,ymax=SHRT_MIN;
+	for(int i=0; i<nPoints; ++i) {
+		if(points[i].x > xmax) xmax = points[i].x;
+		if(points[i].x < xmin) xmin = points[i].x;
+		if(points[i].y > ymax) ymax = points[i].y;
+		if(points[i].y < ymin) ymin = points[i].y;
+	}
+	// add some margin
+	ymin -= 4;
+	xmin -= 4;
+	ymax += 4;
+	xmax += 4;
+
+	float sf;
+	if(xmax - xmin > ymax - ymin) {
+		sf = 254.0 / (xmax - xmin);
+	} else {
+		sf = 254.0 / (ymax - ymin);
+	}
 
 	char* p = &d->buffer[2];
 	for(int i=0; i<nPoints; ++i) {
@@ -104,8 +124,8 @@ char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 			*p++ = 0xff;
 			*p++ = 0xff;
 		} else {
-			*p++ = d->xsf * points[i].x;
-			*p++ = d->ysf * points[i].y;
+			*p++ = sf * (points[i].x - xmin);
+			*p++ = sf * (points[i].y - ymin);
 		}
 	}
 	write(d->fd_strokes[1], d->buffer, msgsize+2);
