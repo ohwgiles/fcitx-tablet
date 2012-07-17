@@ -63,11 +63,6 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		d->userdata = d->drv->Create();
 		d->packet = (char*) malloc(d->drv->packet_size);
 
-		d->fd = open(tablet->conf.devicePath, O_RDONLY);
-		if(d->fd < 0) {
-			FcitxLog(ERROR, "Unable to open device %s", tablet->conf.devicePath);
-			return NULL;
-		}
 	}
 
 	{ // Initialise the X display
@@ -104,9 +99,10 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 
 void FcitxTabletSetFd(void* arg) {
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
-	FD_SET(tablet->driver.fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
-	if(FcitxInstanceGetMaxFD(tablet->fcitx) < tablet->driver.fd)
-		FcitxInstanceSetMaxFD(tablet->fcitx, tablet->driver.fd);
+	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
+	FD_SET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
+	if(FcitxInstanceGetMaxFD(tablet->fcitx) < fd)
+		FcitxInstanceSetMaxFD(tablet->fcitx, fd);
 }
 
 void PushCoordinate(TabletStrokes* s, pt_t newpt) {
@@ -126,13 +122,14 @@ void PushCoordinate(TabletStrokes* s, pt_t newpt) {
 void FcitxTabletProcess(void* arg) {
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
 	TabletDriver* d = &tablet->driver;
-	if(FD_ISSET(d->fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
+	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
+	if(FD_ISSET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
 
 		{ // first read a packet from the raw device
 			int n = 0;
 			const int pktsize = d->drv->packet_size;
 			do {
-				n += read(d->fd, &d->packet[n], pktsize - n);
+				n += read(fd, &d->packet[n], pktsize - n);
 			} while(n < pktsize);
 		}
 
@@ -170,7 +167,7 @@ void FcitxTabletProcess(void* arg) {
 			XSync(tablet->x.dpy, 0);
 		}
 
-		FD_CLR(d->fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
+		FD_CLR(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
 	}
 }
 

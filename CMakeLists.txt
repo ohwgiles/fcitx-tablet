@@ -9,7 +9,14 @@ include_directories (${FCITX4_FCITX_UTILS_INCLUDE_DIRS})
 
 add_definitions( -DLOCALEDIR=\"${CMAKE_INSTALL_PREFIX}/share/locale\" -std=gnu99)
 
-fcitx_add_addon(fcitx-tablet src/pen.c src/ime.c src/config.c src/version.c src/lxbi.c src/fork.c)
+include_directories(src)
+fcitx_add_addon(fcitx-tablet 
+	src/pen.c
+	src/ime.c
+	src/config.c
+	src/version.c
+	src/drivers/lxbi.c
+	src/fork.c)
 
 target_link_libraries(fcitx-tablet X11)
 
@@ -24,4 +31,5 @@ endif()
 
 set(libdir ${LIB_INSTALL_DIR})
 
+add_subdirectory(rules)
 add_subdirectory(data)

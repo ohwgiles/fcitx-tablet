@@ -33,6 +33,8 @@ typedef enum {
 // Interfaces implemented by a tablet driver
 typedef struct _FcitxTabletDriver {
 	void* (*Create)();
+	// get the file descriptor of the device, to put into select()
+	int (*GetDescriptor)(void*);
 	unsigned packet_size; // the amount of bytes to read from the fd
 	unsigned x_max; // maximum X value, needed to perform scaling
 	unsigned y_max;

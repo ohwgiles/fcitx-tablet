@@ -41,7 +41,6 @@ typedef struct {
 	FcitxTabletDriver* drv;
 	void* userdata; // the driver's persistent data
 	char* packet; // buffer for a packet from the driver
-	int fd;
 } TabletDriver;
 
 // Persistent storage for the actual strokes. The points should be

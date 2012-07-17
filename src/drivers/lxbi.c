@@ -17,16 +17,22 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  **************************************************************************/
-
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <fcitx-utils/utils.h>
 #include <fcitx-utils/log.h>
 #include "driver.h"
 
 // lxbi.c
-// This is a simple tablet driver
+// Basic reverse engineered tablet driver.
+// LXBI 智能笔 手写识别系统
+// I bought it for 50块 in 2012 from 中关村 in 北京
+// Appears to contain 08f2:6370 Gotop Information Inc
+// See rules/70-lxbi.rules
 
 typedef enum { LXBI_UP, LXBI_DOWN } LxbiState;
 typedef struct {
+	int fd;
 	short last_x;
 	short last_y;
 	LxbiState st;
@@ -35,8 +41,17 @@ typedef struct {
 void* LxbiCreate() {
 	Lxbi* lx = fcitx_utils_new(Lxbi);
 	lx->st = LXBI_UP;
-	FcitxLog(WARNING, "LxbiCreate");
+	lx->fd = open("/dev/lxbi", O_RDONLY);
+	if(lx->fd < 0) {
+		FcitxLog(ERROR, "Unable to open /dev/lxbi");
+		return NULL;
+	}
 	return lx;
+}
+
+int LxbiGetFD(void* ud) {
+	Lxbi* lx = (Lxbi*) ud;
+	return lx->fd;
 }
 
 void LxbiDestroy(void* ud) {
@@ -54,8 +69,6 @@ FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
 	if(x == lx->last_x && y == lx->last_y) return EV_NONE;
 	lx->last_x = x;
 	lx->last_y = y;
-	//FcitxLog(WARNING, "x: %d, y: %d", x, y);
-	//return EV_NONE;
 	if(x == 0 && y == 0) {
 		if(lx->st == LXBI_UP) return EV_NONE;
 		lx->st = LXBI_UP;
@@ -71,13 +84,12 @@ FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
 	return EV_POINT;
 }
 
-
 FcitxTabletDriver lxbi = {
 	LxbiCreate,
+	LxbiGetFD,
 	8,
 	1307,
 	836,
 	LxbiGetEvent,
 	LxbiDestroy
 };
-
