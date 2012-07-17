@@ -22,6 +22,8 @@
 #include <string.h>
 #include <errno.h>
 #include <fcitx-utils/log.h>
+#include <fcitx-config/hotkey.h>
+#include <fcitx/keys.h>
 #include <fcitx/candidate.h>
 #include <fcitx/context.h>
 #include <fcitx/module.h>
@@ -31,19 +33,13 @@
 #include "recog.h"
 #include "config.h"
 
+
 // ime.c
 // This file contains the fcitx input method object. It receives notifications
 // from the tablet driver, calls the recognition code and updates candidates
 // or commits the string as appropriate
 
-typedef struct {
-	FcitxTabletConfig* config;
-	// Location of the stored pen strokes, to pass through to the recogniser
-	pt_t** stroke_buffer;
-	FcitxInstance* fcitx;
-} FcitxTabletIme;
-
-
+INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg);
 INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int action) {
 	// The event module uses VoidSymbol as a trigger, this means other input methods
 	// will ignore it, actual actions will be passed in the action variable,
@@ -54,13 +50,30 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 		case IME_RECOGNISE:
 			tablet->recog->Process(tablet->recog_ud, tablet->strokes.buffer, (tablet->strokes.ptr - tablet->strokes.buffer));
 			// call into recognition library, update candidate lists
+			return IRV_DISPLAY_CANDWORDS;
 			break;
 		case IME_COMMIT:
-
+			return IRV_COMMIT_STRING;
 			break;
 		default:
 			FcitxLog(ERROR, "IME asked to perform unknown action");
 		}
+		return IRV_TO_PROCESS;
+	}
+
+	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
+		if(tablet->strokes.ptr != tablet->strokes.buffer)
+			return IRV_CLEAN;
+		else
+			return IRV_TO_PROCESS;
+	} else if(FcitxHotkeyIsHotKey(sym, action, FCITX_SPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ENTER)) {
+		if(tablet->strokes.ptr != tablet->strokes.buffer) {
+			char str[] = "test";
+			FcitxInputContext* ic = FcitxInstanceGetCurrentIC(tablet->fcitx);
+			FcitxInstanceCommitString(tablet->fcitx, ic, str);
+			return IRV_CLEAN;
+		} else
+			return IRV_TO_PROCESS;
 	}
 	return IRV_TO_PROCESS;
 }
@@ -68,142 +81,69 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 
 // TODO maybe not needed
 boolean FcitxTabletInit(void* arg) {
-	//FcitxTablet* tablet = (FcitxTablet*) arg;
-	//FcitxLog(WARNING, "FcitxTabletInit, xkb layout: %s", tablet->conf.xkbLayout);
-	//FcitxInstanceSetContext(tablet->fcitx, CONTEXT_IM_KEYBOARD_LAYOUT, tablet->conf.xkbLayout);
 	return true;
 }
 
-// TODO maybe not needed
 void FcitxTabletReset(void* arg) {
-	FcitxLog(WARNING, "FcitxTabletReset");
+	FcitxTabletPen* d = (FcitxTabletPen*) arg;
+	// reset stroke buffer
+	d->strokes.ptr = d->strokes.buffer;
+	d->strokes.n = 0;
+	// get rid of the strokes covering the screen
+	// TODO programmatically
+	system("xrefresh");
 }
 
 
-// TODO maybe not needed, tablet input is one character at a time
+INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* c);
+
 INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg) {
 	FcitxLog(WARNING, "FcitxTabletGetCandWords");
+	FcitxTabletPen* d = (FcitxTabletPen*) arg;
 
-	/*
-	 FcitxTablet* chewing = (FcitxTablet*) arg;
-	 FcitxInputState *input = FcitxInstanceGetInputState(chewing->owner);
-	 FcitxMessages *msgPreedit = FcitxInputStateGetPreedit(input);
-	 FcitxMessages *clientPreedit = FcitxInputStateGetClientPreedit(input);
-	 TabletContext * ctx = chewing->context;
-	 FcitxGlobalConfig* config = FcitxInstanceGetGlobalConfig(chewing->owner);
-
-	 chewing_set_candPerPage(ctx, config->iMaxCandWord);
-	 FcitxCandidateWordSetPageSize(FcitxInputStateGetCandidateList(input), config->iMaxCandWord);
-
-	 //clean up window asap
-	 FcitxInstanceCleanInputWindow(chewing->owner);
-
-	 char * buf_str = chewing_buffer_String(ctx);
-	 char * zuin_str = chewing_zuin_String(ctx, NULL);
-	 ConfigTablet(chewing);
-
-	 FcitxLog(DEBUG, "%s %s", buf_str, zuin_str);
-
-	 int index = 0;
-	 // if not check done, so there is candidate word
-	 if (!chewing_cand_CheckDone(ctx)) {
-		  //get candidate word
-		  chewing_cand_Enumerate(ctx);
-		  while (chewing_cand_hasNext(ctx)) {
-				char* str = chewing_cand_String(ctx);
-				FcitxCandidateWord cw;
-				TabletCandWord* w = (TabletCandWord*) fcitx_utils_malloc0(sizeof(TabletCandWord));
-				w->index = index;
-				cw.callback = FcitxTabletGetCandWord;
-				cw.owner = chewing;
-				cw.priv = w;
-				cw.strExtra = NULL;
-				cw.strWord = strdup(str);
-				cw.wordType = MSG_OTHER;
-				FcitxCandidateWordAppend(FcitxInputStateGetCandidateList(input), &cw);
-				chewing_free(str);
-				index ++;
-		  }
-	 }
-
-	 // there is nothing
-	 if (strlen(zuin_str) == 0 && strlen(buf_str) == 0 && index == 0)
-		  return IRV_DISPLAY_CANDWORDS;
-
-	 // setup cursor
-	 FcitxInputStateSetShowCursor(input, true);
-	 int cur = chewing_cursor_Current(ctx);
-	 FcitxLog(DEBUG, "cur: %d", cur);
-	 int rcur = FcitxTabletGetRawCursorPos(buf_str, cur);
-	 FcitxInputStateSetCursorPos(input, rcur);
-	 FcitxInputStateSetClientCursorPos(input, rcur);
-
-	 // insert zuin in the middle
-	 char * half1 = strndup(buf_str, rcur);
-	 char * half2 = strdup(buf_str + rcur);
-	 FcitxMessagesAddMessageAtLast(msgPreedit, MSG_INPUT, "%s%s%s", half1, zuin_str, half2);
-	 FcitxMessagesAddMessageAtLast(clientPreedit, MSG_INPUT, "%s%s%s", half1, zuin_str, half2);
-	 chewing_free(buf_str); chewing_free(zuin_str); free(half1); free(half2);
-*/
+	 FcitxInputState *input = FcitxInstanceGetInputState(d->fcitx);
+	 FcitxInstanceCleanInputWindow(d->fcitx);
+	 char* c = d->recog->GetCandidates(d->recog_ud);
+	 int len = strlen(c);
+	 int i = 0;
+	 do {
+		int n = mblen(&c[i], len);
+		if(n <= 0) break;
+		FcitxCandidateWord cw;
+		cw.callback = FcitxTabletGetCandWord;
+		cw.strExtra = NULL;
+		cw.priv = NULL;
+		cw.owner = d;
+		cw.wordType = MSG_OTHER;
+		cw.strWord = (char*) malloc(n+1);
+		memcpy(cw.strWord, &c[i], n);
+		cw.strWord[n] = 0;
+		FcitxCandidateWordAppend(FcitxInputStateGetCandidateList(input), &cw);
+		i += n;
+	 } while(1);
 	return IRV_DISPLAY_CANDWORDS;
 }
 
 INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWord) {
-/*
-	 FcitxTablet* chewing = (FcitxTablet*) candWord->owner;
-	 TabletCandWord* w = (TabletCandWord*) candWord->priv;
-	 FcitxGlobalConfig* config = FcitxInstanceGetGlobalConfig(chewing->owner);
-	 FcitxInputState *input = FcitxInstanceGetInputState(chewing->owner);
-	 int page = w->index / config->iMaxCandWord;
-	 int off = w->index % config->iMaxCandWord;
-	 if (page < 0 || page >= chewing_cand_TotalPage(chewing->context))
-		  return IRV_TO_PROCESS;
-	 int lastPage = chewing_cand_CurrentPage(chewing->context);
-	 while (page != chewing_cand_CurrentPage(chewing->context)) {
-		  if (page < chewing_cand_CurrentPage(chewing->context)) {
-				chewing_handle_Left(chewing->context);
-		  }
-		  if (page > chewing_cand_CurrentPage(chewing->context)) {
-				chewing_handle_Right(chewing->context);
-		  }
-		  // though useless, but take care if there is a bug cause freeze
-		  if (lastPage == chewing_cand_CurrentPage(chewing->context)) {
-				break;
-		  }
-		  lastPage = chewing_cand_CurrentPage(chewing->context);
-	 }
-	 chewing_handle_Default( chewing->context, selKey[off] );
-
-	 if (chewing_keystroke_CheckAbsorb(chewing->context)) {
-		  return IRV_DISPLAY_CANDWORDS;
-	 } else if (chewing_keystroke_CheckIgnore(chewing->context)) {
-		  return IRV_TO_PROCESS;
-	 } else if (chewing_commit_Check(chewing->context)) {
-		  char* str = chewing_commit_String(chewing->context);
-		  strcpy(FcitxInputStateGetOutputString(input), str);
-		  chewing_free(str);
-		  return IRV_COMMIT_STRING;
-	 } else
-		  return IRV_DISPLAY_CANDWORDS;
-		  */
+	FcitxLog(WARNING, "FcitxTabletGetCandWord");
+	FcitxTabletPen* d = (FcitxTabletPen*) candWord->owner;
+	FcitxInputState *input = FcitxInstanceGetInputState(d->fcitx);
+	strcpy(FcitxInputStateGetOutputString(input), candWord->strWord);
 	return IRV_COMMIT_STRING;
-
 }
 
-void FcitxTabletImeDestroy(void* arg)
-{
+void FcitxTabletImeDestroy(void* arg) {
 }
 
 void* FcitxTabletImeCreate(FcitxInstance* instance) {
 	FcitxTabletPen* ud = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME)->addonInstance;
 
-	FcitxTabletIme* ime = fcitx_utils_new(FcitxTabletIme);
 	FcitxInstanceRegisterIM(
 				instance,
 				ud, //userdata
 				"Tablet",
 				"Tablet",
-				"Tablet",
+				"tablet",
 				FcitxTabletInit,
 				FcitxTabletReset,
 				FcitxTabletDoInput,
@@ -217,7 +157,7 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				);
 
 
-	return ime;
+	return ud;
 }
 
 

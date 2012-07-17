@@ -38,10 +38,12 @@ typedef struct {
 	int fd_candidates[2];
 	char* buffer;
 	int bufsize;
+	char* candidates;
 } RecogForkData;
 
 void* RecogForkCreate(FcitxTabletConfig* cfg) {
 	RecogForkData* d = fcitx_utils_new(RecogForkData);
+	d->candidates = malloc(30 * sizeof(char));
 	// todo read path to extern app from cfg
 	pid_t pid;
 	// open pipes
@@ -81,10 +83,17 @@ void* RecogForkCreate(FcitxTabletConfig* cfg) {
 
 void RecogForkDestroy(void* ud) {
 	RecogForkData* d = (RecogForkData*) ud;
+	free(d->candidates);
+	free(d->buffer);
 	free(d);
 }
 
-char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
+char* RecogForkGetCandidates(void* ud) {
+	RecogForkData* d = (RecogForkData*) ud;
+	return d->candidates;
+}
+
+void RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	RecogForkData* d = (RecogForkData*) ud;
 	short msgsize = nPoints * 2; // two chars for each point
 	if(d->bufsize < msgsize+2) {
@@ -127,19 +136,17 @@ char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	}
 	write(d->fd_strokes[1], d->buffer, msgsize+2);
 
-	char result[30];
 	short sz = 0;
 	if(read(d->fd_candidates[0], &sz, 2) != 2)
 		FcitxLog(ERROR, "Couldn't read length");
-	if(read(d->fd_candidates[0], result, sz) < 0)
-		return perror("read candidates"), NULL;
-
-	return strdup(result);
+	if(read(d->fd_candidates[0], d->candidates, sz) < 0)
+		perror("read candidates");
 }
 
 FcitxTabletRecogniser recogfork = {
 	RecogForkCreate,
 	RecogForkProcess,
+	RecogForkGetCandidates,
 	RecogForkDestroy
 };
 

@@ -28,7 +28,8 @@
 
 typedef struct {
 	void* (*Create)(FcitxTabletConfig* cfg);
-	char* (*Process)(void*, pt_t*, int);
+	void (*Process)(void*, pt_t*, int);
+	char* (*GetCandidates)(void*);
 	void (*Destroy)(void*);
 } FcitxTabletRecogniser;
 
