@@ -110,16 +110,13 @@ void FcitxTabletSetFd(void* arg) {
 }
 
 void PushCoordinate(TabletStrokes* s, pt_t newpt) {
-	if(newpt.x <= 0 && newpt.y <= 0)
-		FcitxLog(WARNING, "Pushing zero pt");
 	*s->ptr++ = newpt;
 	if(s->ptr == &s->buffer[s->n]) { // if we overflow the buffer, increase it
-		FcitxLog(WARNING, "resizing");
+		FcitxLog(WARNING, "Resizing stroke buffer");
 		int newsize = s->n + 1024;
 		pt_t* newbuf = (pt_t*) realloc(s->buffer, sizeof(pt_t)*newsize);
 		if(newbuf == NULL)
 			FcitxLog(ERROR, "Failed to allocate more stroke memory");
-//		memmove(newbuf, s->buffer, s->n);
 		s->buffer = newbuf;
 		s->ptr = &s->buffer[s->n];
 		s->n = newsize;
@@ -148,7 +145,6 @@ void FcitxTabletProcess(void* arg) {
 				case EV_PENDOWN:
 					break; // nothing
 				case EV_PENUP:
-					FcitxLog(WARNING, "penup");
 					{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
 					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
 					break;

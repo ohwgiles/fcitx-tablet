@@ -27,13 +27,11 @@
 // The protocol is expected to be as follows. The recogniser will read
 // from stdin. fcitx-tablet will send binary data: the first 16 bits is the
 // number of bytes in the message, the following message contains (x,y) pairs
-// of coordinate points. x and y are 8 bits each. After processing the points
-// the recogniser will output a 16 bit integer describing the length of its
-// reply, following which it will output its results in UTF-8 in order of
-// most likely to least likely. It will then block on stdin waiting for the
-// next message.
-#include <sys/stat.h>
-#include <fcntl.h>
+// of coordinate points. x and y are 8 bits each. Strokes are separated by
+// (0xff, 0xff). After processing the points the recogniser will output a
+// 16 bit integer describing the length of its reply, following which it
+// will output its results in UTF-8 in order of most likely to least likely.
+// It will then block on stdin waiting for the next message.
 
 typedef struct {
 	int fd_strokes[2];
@@ -120,7 +118,6 @@ char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	char* p = &d->buffer[2];
 	for(int i=0; i<nPoints; ++i) {
 		if(!PT_ISVALID(points[i])) {
-			FcitxLog(WARNING, "writing break pt");
 			*p++ = 0xff;
 			*p++ = 0xff;
 		} else {
@@ -129,24 +126,15 @@ char* RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 		}
 	}
 	write(d->fd_strokes[1], d->buffer, msgsize+2);
-	int ofd = open("/tmp/strokes.dat", O_CREAT|O_TRUNC|O_WRONLY);
-	write(ofd, d->buffer, msgsize+2);
-	close(ofd);
-
-
-//	return 0;
 
 	char result[30];
 	short sz = 0;
 	if(read(d->fd_candidates[0], &sz, 2) != 2)
 		FcitxLog(ERROR, "Couldn't read length");
-	FcitxLog(WARNING, "Starting read");
-	int n = read(d->fd_candidates[0], result, sz);
-	if(n < 0) perror("read candidates");
+	if(read(d->fd_candidates[0], result, sz) < 0)
+		return perror("read candidates"), NULL;
 
-	FcitxLog(WARNING, "received %d bytes (expecting %d)", n, sz);
-	FcitxLog(WARNING, "str: %s", result);
-	return 0;
+	return strdup(result);
 }
 
 FcitxTabletRecogniser recogfork = {
