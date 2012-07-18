@@ -16,6 +16,7 @@ fcitx_add_addon(fcitx-tablet
 	src/config.c
 	src/version.c
 	src/drivers/lxbi.c
+	src/zinnia.c
 	src/fork.c)
 
 target_link_libraries(fcitx-tablet X11)
