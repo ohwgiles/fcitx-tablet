@@ -100,9 +100,11 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 void FcitxTabletSetFd(void* arg) {
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
 	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
-	FD_SET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
-	if(FcitxInstanceGetMaxFD(tablet->fcitx) < fd)
-		FcitxInstanceSetMaxFD(tablet->fcitx, fd);
+   if(fd > 0) {
+      FD_SET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
+      if(FcitxInstanceGetMaxFD(tablet->fcitx) < fd)
+         FcitxInstanceSetMaxFD(tablet->fcitx, fd);
+   }
 }
 
 void PushCoordinate(TabletStrokes* s, pt_t newpt) {
@@ -123,7 +125,7 @@ void FcitxTabletProcess(void* arg) {
 	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
 	TabletDriver* d = &tablet->driver;
 	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
-	if(FD_ISSET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
+	if(fd > 0 && FD_ISSET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
 
 		{ // first read a packet from the raw device
 			int n = 0;

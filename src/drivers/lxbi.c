@@ -38,20 +38,20 @@ typedef struct {
 	LxbiState st;
 } Lxbi;
 
+int LxbiGetFD(void* ud) {
+	Lxbi* lx = (Lxbi*) ud;
+   if(lx->fd < 0) { // try again to open FD
+      lx->fd = open("/dev/lxbi", O_RDONLY);
+   }
+	return lx->fd;
+}
+
 void* LxbiCreate() {
 	Lxbi* lx = fcitx_utils_new(Lxbi);
 	lx->st = LXBI_UP;
-	lx->fd = open("/dev/lxbi", O_RDONLY);
-	if(lx->fd < 0) {
-		FcitxLog(ERROR, "Unable to open /dev/lxbi");
-		return NULL;
-	}
+   lx->fd = -1;
+   LxbiGetFD(lx);
 	return lx;
-}
-
-int LxbiGetFD(void* ud) {
-	Lxbi* lx = (Lxbi*) ud;
-	return lx->fd;
 }
 
 void LxbiDestroy(void* ud) {
