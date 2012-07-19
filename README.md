@@ -1,7 +1,7 @@
 fcitx-tablet
 ============
 
-The aim of this project is to enable the entry of characters via a graphics tablet, integrated into the fcitx input method framework. It is currently incomplete.
+The aim of this project is to enable the entry of characters via a graphics tablet, integrated into the [fcitx](https://github.com/fcitx/fcitx/) input method framework. It is currently incomplete.
 
 
 Goals
