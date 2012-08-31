@@ -145,7 +145,7 @@ void RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 		perror("read candidates");
 }
 
-FcitxTabletRecogniser recogfork = {
+TabletEngine engFork = {
 	RecogForkCreate,
 	RecogForkProcess,
 	RecogForkGetCandidates,

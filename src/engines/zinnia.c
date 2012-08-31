@@ -128,7 +128,7 @@ char* ZinniaGetCandidates(void* ud) {
 	return zn->candidates;
 }
 
-FcitxTabletRecogniser zinnia = {
+TabletEngine engZinnia = {
 	ZinniaCreate,
 	ZinniaProcess,
 	ZinniaGetCandidates,

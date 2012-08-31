@@ -23,7 +23,7 @@
 #include "point.h"
 #include "config.h"
 
-// A recogniser takes a buffer of strokes and converts it into a
+// An engine takes a buffer of strokes and converts it into a
 // sorted list of UTF-8 candidates
 
 typedef struct {
@@ -31,6 +31,6 @@ typedef struct {
 	void (*Process)(void*, pt_t*, int);
 	char* (*GetCandidates)(void*);
 	void (*Destroy)(void*);
-} FcitxTabletRecogniser;
+} TabletEngine;
 
 #endif
