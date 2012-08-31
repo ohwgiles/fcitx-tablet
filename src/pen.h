@@ -25,7 +25,7 @@
 #include "config.h"
 #include "driver.h"
 #include "point.h"
-#include "recog.h"
+#include "engine.h"
 
 #define FCITX_TABLET_NAME "fcitx-tablet-pen"
 

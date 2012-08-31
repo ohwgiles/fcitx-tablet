@@ -19,7 +19,7 @@
  **************************************************************************/
 #include <limits.h>
 #include <fcitx-utils/log.h>
-#include "recog.h"
+#include "engine.h"
 
 // fork.c
 // A recogniser that forks an external program

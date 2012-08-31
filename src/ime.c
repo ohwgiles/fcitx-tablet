@@ -30,7 +30,7 @@
 #include "pen.h"
 #include "ime.h"
 #include "point.h"
-#include "recog.h"
+#include "engine.h"
 #include "config.h"
 
 

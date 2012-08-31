@@ -50,7 +50,7 @@ FcitxTabletPen* GetConfig(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
 // Drivers, see driver.h
 extern FcitxTabletDriver lxbi;
 
-// Recognisers, see recog.h
+// Recognisers, see engine.h
 extern FcitxTabletRecogniser recogfork;
 extern FcitxTabletRecogniser zinnia;
 

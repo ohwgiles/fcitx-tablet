@@ -20,7 +20,7 @@
 #include <limits.h>
 #include <fcitx-utils/log.h>
 #include <zinnia.h>
-#include "recog.h"
+#include "engine.h"
 #include "line.h"
 // zinnia.c
 // A recogniser using the Zinnia framework

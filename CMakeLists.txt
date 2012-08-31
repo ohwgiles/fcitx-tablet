@@ -11,14 +11,14 @@ add_definitions( -DLOCALEDIR=\"${CMAKE_INSTALL_PREFIX}/share/locale\" -std=gnu99
 
 include_directories(src)
 fcitx_add_addon(fcitx-tablet 
+	src/config.c
+	src/line.c
 	src/pen.c
 	src/ime.c
-src/line.c
-	src/config.c
 	src/version.c
 	src/drivers/lxbi.c
-	src/zinnia.c
-	src/fork.c)
+	src/engines/zinnia.c
+	src/engines/fork.c)
 
 target_link_libraries(fcitx-tablet X11 Xfixes zinnia)
 
