@@ -22,81 +22,38 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <fcitx-utils/log.h>
-#include <fcitx-config/hotkey.h>
-#include <fcitx/keys.h>
-#include <fcitx/candidate.h>
-#include <fcitx/context.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
+
 #include <X11/Xlib.h>
-#include <fcitx/module.h>
-#include <fcitx-utils/log.h>
-#include <fcitx/context.h>
-#include <fcntl.h>
-#include "config.h"
-#include "driver.h"
 #include <X11/Xatom.h>
 #include <X11/extensions/Xfixes.h>
 #include <X11/extensions/shapeconst.h>
-#include <fcitx/module.h>
-#include "point.h"
-#include "engine.h"
-#include "config.h"
+
+#include <fcitx/keys.h>
+#include <fcitx/candidate.h>
+#include <fcitx/context.h>
 #include <fcitx/instance.h>
-#include <X11/Xlib.h>
+#include <fcitx-utils/log.h>
+#include <fcitx-config/hotkey.h>
+#include <fcitx/module.h>
+#include <fcntl.h>
+
 #include "config.h"
 #include "driver.h"
 #include "point.h"
 #include "engine.h"
+#include "config.h"
 
-#define FCITX_TABLET_NAME "fcitx-tablet-pen"
+#define FCITX_TABLET_NAME "fcitx-tablet"
 
-// Possible actions for the input method, triggered by tablet events
-// such as timeouts and penups. See FcitxTabletProcess
-typedef enum {
-	IME_RECOGNISE,
-	IME_COMMIT
-} ImeAction;
-
-// Persistent storage for data relating to X drawing
-typedef struct {
-	Display* dpy;
-	Window win;
-	int w,h;
-	GC gc;
-	XGCValues gcv;
-} TabletX;
-
-// Persistent storage for data relating to the tablet driver
-typedef struct {
-	FcitxTabletDriver* drv;
-	void* userdata; // the driver's persistent data
-	char* packet; // buffer for a packet from the driver
-} TabletDriver;
-
-// Persistent storage for the actual strokes. The points should be
-// scaled to screen resolution boundaries before being stored here
-typedef struct {
-	pt_t* buffer; // start of buffer
-	pt_t* ptr; // moving pointer
-	unsigned n;
-} TabletStrokes;
-
-// Wrapper struct to hold all the above
-typedef struct {
-	FcitxTabletConfig conf;
-	TabletX x;
-	TabletDriver driver;
-	TabletEngine* engine;
-	void* engine_ud;
-	TabletStrokes strokes;
-	FcitxInstance* fcitx;
-} FcitxTabletPen;
+// The tablet module consists of two inter-related parts, a fcitx-ime
+// and a fcitx-module. The ime is necessary to display candidates and
+// forward the chosen candidates to the client application. The event
+// module is necessary to select on events from the hardware devices
+// and forward such events to the ime for processing. They share one
+// data structure, which is created in the event module since it is
+// more long-lived than the IME class.
 
 // Drivers, see driver.h
 extern FcitxTabletDriver lxbi;
@@ -105,28 +62,103 @@ extern FcitxTabletDriver lxbi;
 extern TabletEngine engFork;
 extern TabletEngine engZinnia;
 
-boolean CharacterInProgress(TabletStrokes* strokes) {
+// The Fcitx Tablet module data members
+typedef struct {
+	// Configuration file
+	FcitxTabletConfig tabletConfig;
+	// Members for xlib manipulation
+	Display* xDisplay;
+	Window xWindow;
+	int xWidth,xHeight;
+	GC xGC;
+	// Members for driver access
+	FcitxTabletDriver* driverInstance;
+	void* driverData; // the driver's persistent data
+	char* driverPacket; // buffer for a packet from the driver
+	// Members for stroke data storage
+	pt_t* strokesBuffer; // start of buffer
+	pt_t* strokesPtr; // moving pointer
+	unsigned strokesBufferSize;
+	// Recognition engine
+	TabletEngine* engineInstance;
+	void* engineData;
+	// The main fcitx instance
+	FcitxInstance* fcitx;
+} FcitxTablet;
+
+// Possible actions for the input method, triggered by tablet events
+// such as timeouts and penups. See FcitxTabletProcess
+typedef enum {
+	IME_RECOGNISE,
+	IME_COMMIT
+} ImeAction;
+
+static boolean CharacterInProgress(FcitxTablet* tablet) {
 	// a character drawing is in process if the current position pointer
 	// is not at the beginning of the stroke buffer
-	return strokes->ptr != strokes->buffer;
+	return tablet->strokesPtr != tablet->strokesBuffer;
 }
 
-void ClearCharacter(FcitxTabletPen* d) {
-	d->strokes.ptr = d->strokes.buffer;
-	XClearWindow(d->x.dpy, d->x.win);
-	XFlush(d->x.dpy);
+// Clears the little window and resets the stroke buffer
+static void ClearCharacter(FcitxTablet* tablet) {
+	tablet->strokesPtr = tablet->strokesBuffer;
+	XClearWindow(tablet->xDisplay, tablet->xWindow);
+	XFlush(tablet->xDisplay);
 }
 
-INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg);
+// This function is called from within fcitx. When the user selects a
+// candidate, this function copies the actual utf-8 string into the
+// output buffer fcitx uses to send to the client
+INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWord) {
+	FcitxTablet* tablet = (FcitxTablet*) candWord->owner;
+	FcitxInputState *input = FcitxInstanceGetInputState(tablet->fcitx);
+	strcpy(FcitxInputStateGetOutputString(input), candWord->strWord);
+	return IRV_COMMIT_STRING;
+}
+
+// This function is called from within fcitx. It is called when the
+// list of input candidates has changed. It extracts the candidates
+// from the recognition engine and puts them into the format required
+// by fcitx for displaying in its popup window
+INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg) {
+	FcitxTablet* tablet = (FcitxTablet*) arg;
+	FcitxInputState *input = FcitxInstanceGetInputState(tablet->fcitx);
+	FcitxInstanceCleanInputWindow(tablet->fcitx);
+	char* c = tablet->engineInstance->GetCandidates(tablet->engineData);
+	int len = strlen(c);
+	int i = 0;
+	do {
+		int n = mblen(&c[i], len);
+		if(n <= 0) break;
+		FcitxCandidateWord cw;
+		cw.callback = FcitxTabletGetCandWord;
+		cw.strExtra = NULL;
+		cw.priv = NULL;
+		cw.owner = tablet;
+		cw.wordType = MSG_OTHER;
+		// TODO does fcitx free this?
+		cw.strWord = (char*) malloc(n+1);
+		memcpy(cw.strWord, &c[i], n);
+		cw.strWord[n] = 0;
+		FcitxCandidateWordAppend(FcitxInputStateGetCandidateList(input), &cw);
+		i += n;
+	} while(1);
+	return IRV_DISPLAY_CANDWORDS;
+}
+
+// This function is called from within fcitx. It is called when user
+// input is detected. This may be a keypress, or it may be triggered by
+// a new stroke on the tablet (see FcitxTabletProcess)
 INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int action) {
 	// The event module uses VoidSymbol as a trigger, this means other input methods
-	// will ignore it, actual actions will be passed in the action variable,
-	// see ImeAction in ime.h
-	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
+	// will ignore it, actual actions will be passed in the action variable
+	FcitxTablet* tablet = (FcitxTablet*) arg;
 	if(sym == FcitxKey_VoidSymbol) {
+		// Depending on the tablet driver, we could add more actions, for
+		// example selecting candidates via the tablet
 		switch(action) {
 		case IME_RECOGNISE:
-			tablet->engine->Process(tablet->engine_ud, tablet->strokes.buffer, (tablet->strokes.ptr - tablet->strokes.buffer));
+			tablet->engineInstance->Process(tablet->engineData, tablet->strokesBuffer, (tablet->strokesPtr - tablet->strokesBuffer));
 			// call into recognition library, update candidate lists
 			return IRV_DISPLAY_CANDWORDS;
 			break;
@@ -136,24 +168,24 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 		default:
 			FcitxLog(ERROR, "IME asked to perform unknown action");
 		}
-		return IRV_TO_PROCESS;
 	}
-
+	// Backspace and spacebar need to be handled specially
 	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
-		if(CharacterInProgress(&tablet->strokes)) {
+		if(CharacterInProgress(tablet)) {
+			// scrap the current character
 			ClearCharacter(tablet);
 			return IRV_CLEAN;
 		} else
 			return IRV_TO_PROCESS;
 	} else if(FcitxHotkeyIsHotKey(sym, action, FCITX_SPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ENTER)) {
-		if(CharacterInProgress(&tablet->strokes)) {
-			char s[5];
-			char* candidates = tablet->engine->GetCandidates(tablet->engine_ud);
+		if(CharacterInProgress(tablet)) {
+			// commit the current character
+			char s[5]; // five chars should be plenty to hold a utf-8 char
+			char* candidates = tablet->engineInstance->GetCandidates(tablet->engineData);
 			int l = mblen(candidates, 10);
 			memcpy(s, candidates, l);
 			s[l] = '\0';
-			FcitxInputContext* ic = FcitxInstanceGetCurrentIC(tablet->fcitx);
-			FcitxInstanceCommitString(tablet->fcitx, ic, s);
+			FcitxInstanceCommitString(tablet->fcitx, FcitxInstanceGetCurrentIC(tablet->fcitx), s);
 			return IRV_CLEAN;
 		} else
 			return IRV_TO_PROCESS;
@@ -161,71 +193,30 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 	return IRV_TO_PROCESS;
 }
 
-
 // TODO maybe not needed
 boolean FcitxTabletInit(void* arg) {
 	return true;
 }
 
-FcitxIMClass ime;
+// This function is called whenever the client input window is changed,
+// as well as on startup. Clean the current character and hide the drawing window
 void FcitxTabletReset(void* arg) {
-	FcitxTabletPen* d = (FcitxTabletPen*) arg;
+	FcitxTablet* tablet = (FcitxTablet*) arg;
 	// reset stroke buffer
-	ClearCharacter(d);
-	// get rid of the strokes covering the screen
-	// TODO programmatically
-	//system("xrefresh");
-	FcitxLog(WARNING, "reset");
-
-	XUnmapWindow(d->x.dpy, d->x.win);
-	 XFlush(d->x.dpy);
-}
-
-
-INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* c);
-
-INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg) {
-	FcitxLog(WARNING, "FcitxTabletGetCandWords");
-	FcitxTabletPen* d = (FcitxTabletPen*) arg;
-
-	 FcitxInputState *input = FcitxInstanceGetInputState(d->fcitx);
-	 FcitxInstanceCleanInputWindow(d->fcitx);
-	 char* c = d->engine->GetCandidates(d->engine_ud);
-	 int len = strlen(c);
-	 int i = 0;
-	 do {
-		int n = mblen(&c[i], len);
-		if(n <= 0) break;
-		FcitxCandidateWord cw;
-		cw.callback = FcitxTabletGetCandWord;
-		cw.strExtra = NULL;
-		cw.priv = NULL;
-		cw.owner = d;
-		cw.wordType = MSG_OTHER;
-		cw.strWord = (char*) malloc(n+1);
-		memcpy(cw.strWord, &c[i], n);
-		cw.strWord[n] = 0;
-		FcitxCandidateWordAppend(FcitxInputStateGetCandidateList(input), &cw);
-		i += n;
-	 } while(1);
-	return IRV_DISPLAY_CANDWORDS;
-}
-
-INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWord) {
-	FcitxLog(WARNING, "FcitxTabletGetCandWord");
-	FcitxTabletPen* d = (FcitxTabletPen*) candWord->owner;
-	FcitxInputState *input = FcitxInstanceGetInputState(d->fcitx);
-	strcpy(FcitxInputStateGetOutputString(input), candWord->strWord);
-	return IRV_COMMIT_STRING;
+	ClearCharacter(tablet);
+	// destroy the popup window
+	XUnmapWindow(tablet->xDisplay, tablet->xWindow);
+	XFlush(tablet->xDisplay);
 }
 
 void FcitxTabletImeDestroy(void* arg) {
 	FcitxLog(WARNING, "destroy");
 }
 
+// Creates the IME component
 void* FcitxTabletImeCreate(FcitxInstance* instance) {
-	FcitxTabletPen* ud = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME)->addonInstance;
-
+	// Steal the user data from the event addon, since it's more long lived
+	FcitxTablet* ud = FcitxAddonsGetAddonByName(FcitxInstanceGetAddons(instance), FCITX_TABLET_NAME)->addonInstance;
 	FcitxInstanceRegisterIM(
 				instance,
 				ud, //userdata
@@ -243,154 +234,134 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				1,
 				"zh_CN"
 				);
-
-
 	return ud;
 }
 
-
-FCITX_EXPORT_API FcitxIMClass ime = {
-	FcitxTabletImeCreate,
-	FcitxTabletImeDestroy
-};
-
-
-// Access the config from other modules
-FcitxTabletPen* GetConfig(FcitxTabletPen* tablet, FcitxModuleFunctionArg args) {
-	return tablet;
-}
-
+// Creates the event addon
 void* FcitxTabletCreate(FcitxInstance* instance) {
-	FcitxTabletPen* tablet = fcitx_utils_new(FcitxTabletPen);
-	FcitxTabletLoadConfig(&tablet->conf);
+	FcitxTablet* tablet = fcitx_utils_new(FcitxTablet);
+	FcitxTabletLoadConfig(&tablet->tabletConfig);
 	// TODO select driver from config, currently using lxbi
 
 	{ // Initialise the driver
-		TabletDriver* d = &tablet->driver;
-		d->drv = &lxbi;
-		d->userdata = d->drv->Create();
-		d->packet = (char*) malloc(d->drv->packet_size);
-
+		tablet->driverInstance = &lxbi;
+		tablet->driverData = tablet->driverInstance->Create();
+		tablet->driverPacket = (char*) malloc(tablet->driverInstance->packet_size);
 	}
 
 	{ // Initialise the X display
-		TabletX* x = &tablet->x;
-		if(!(x->dpy = XOpenDisplay(NULL)))  {
+		if(!(tablet->xDisplay = XOpenDisplay(NULL)))  {
 			FcitxLog(ERROR, "Unable to open X display");
 			return NULL;
 		}
-		//int blk = BlackPixel(x->dpy, DefaultScreen(x->dpy));
-		x->w = 250;
-		x->h = 150;
+		// create the window
+		tablet->xWidth = 250;
+		tablet->xHeight = 150;
 		XSetWindowAttributes attrs;
 		attrs.override_redirect = True;
-		attrs.background_pixel = WhitePixel(x->dpy, DefaultScreen(x->dpy));
-		x->win = XCreateWindow(x->dpy, DefaultRootWindow(x->dpy), 0, 0, x->w, x->h, 0, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
-		x->gcv.function = GXcopy;
-		x->gcv.subwindow_mode = IncludeInferiors;
-		x->gcv.line_width = 4;
-		x->gcv.cap_style = CapRound;
-		x->gcv.join_style = JoinRound;
-		x->gc = XCreateGC(x->dpy, x->win, GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &x->gcv);
-		XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
-//		Atom a = XInternAtom(x->dpy, "_NET_WM_WINDOW_TYPE", False);
-//		Atom b = XInternAtom(x->dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
-//		XChangeProperty (x->dpy, x->win, a, XA_ATOM, 32, PropModeReplace, (unsigned char *) &b, 1);
+		attrs.background_pixel = WhitePixel(tablet->xDisplay, DefaultScreen(tablet->xDisplay));
+		tablet->xWindow = XCreateWindow(tablet->xDisplay, DefaultRootWindow(tablet->xDisplay), 0, 0, tablet->xWidth, tablet->xHeight, 0, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
+		// set up the line style
+		XGCValues gcv;
+		gcv.function = GXcopy;
+		gcv.subwindow_mode = IncludeInferiors;
+		gcv.line_width = 4;
+		gcv.cap_style = CapRound;
+		gcv.join_style = JoinRound;
+		tablet->xGC = XCreateGC(tablet->xDisplay, tablet->xWindow, GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &gcv);
+		XSetForeground(tablet->xDisplay, tablet->xGC, BlackPixel(tablet->xDisplay, DefaultScreen(tablet->xDisplay)));
+		// prevent the window from getting focus or input
 		XRectangle rect = {0,0,0,0};
-		XserverRegion region = XFixesCreateRegion(x->dpy,&rect, 1);
-		XFixesSetWindowShapeRegion(x->dpy, x->win, ShapeInput, 0, 0, region);
-		XFixesDestroyRegion(x->dpy, region);
-
-//		MWMHints mwmhints;
-//	  Atom prop;
-//	  memset(&mwmhints, 0, sizeof(mwmhints));
-//	  prop = XInternAtom(display, "_MOTIF_WM_HINTS", False);
-//	  mwmhints.flags = MWM_HINTS_DECORATIONS;
-//	  mwmhints.decorations = 0;
-//	  XChangeProperty(x->dpy, x->win, prop, prop, 32, PropModeReplace, (unsigned char *) &mwmhints, PROP_MWM_HINTS_ELEMENTS);
+		XserverRegion region = XFixesCreateRegion(tablet->xDisplay,&rect, 1);
+		XFixesSetWindowShapeRegion(tablet->xDisplay, tablet->xWindow, ShapeInput, 0, 0, region);
+		XFixesDestroyRegion(tablet->xDisplay, region);
 	}
 
 	{ // Initialise the stroke buffer
-		TabletStrokes* s = &tablet->strokes;
-		s->n = 2048;
-		s->buffer = (pt_t*) malloc(sizeof(pt_t) * s->n);
-		s->ptr = s->buffer;
+		tablet->strokesBufferSize = 2048; // should be heaps. Will get automatically enlarged if required
+		tablet->strokesBuffer = (pt_t*) malloc(sizeof(pt_t) * tablet->strokesBufferSize);
+		tablet->strokesPtr = tablet->strokesBuffer;
 	}
 
 	{ // instantiate the engine
 		// TODO select from config
-		tablet->engine = &engZinnia;
-		tablet->engine_ud = engZinnia.Create(&tablet->conf);
+		tablet->engineInstance = &engZinnia;
+		tablet->engineData = engZinnia.Create(&tablet->tabletConfig);
 	}
 
 	tablet->fcitx = instance;
 	return tablet;
 }
 
+// Required by fcitx. Adds our file descriptor (for the tablet) to its
+// fd_set, so we can get notified about new tablet input
 void FcitxTabletSetFd(void* arg) {
-	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
-	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
-   if(fd > 0) {
-      FD_SET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
-      if(FcitxInstanceGetMaxFD(tablet->fcitx) < fd)
-         FcitxInstanceSetMaxFD(tablet->fcitx, fd);
-   }
-}
-
-void PushCoordinate(TabletStrokes* s, pt_t newpt) {
-	*s->ptr++ = newpt;
-	if(s->ptr == &s->buffer[s->n]) { // if we overflow the buffer, increase it
-		FcitxLog(WARNING, "Resizing stroke buffer");
-		int newsize = s->n + 1024;
-		pt_t* newbuf = (pt_t*) realloc(s->buffer, sizeof(pt_t)*newsize);
-		if(newbuf == NULL)
-			FcitxLog(ERROR, "Failed to allocate more stroke memory");
-		s->buffer = newbuf;
-		s->ptr = &s->buffer[s->n];
-		s->n = newsize;
+	FcitxTablet* tablet = (FcitxTablet*) arg;
+	int fd = tablet->driverInstance->GetDescriptor(tablet->driverData);
+	if(fd > 0) {
+		FD_SET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
+		if(FcitxInstanceGetMaxFD(tablet->fcitx) < fd)
+			FcitxInstanceSetMaxFD(tablet->fcitx, fd);
 	}
 }
 
-void FcitxTabletProcess(void* arg) {
-	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
-	TabletDriver* d = &tablet->driver;
-	int fd = tablet->driver.drv->GetDescriptor(tablet->driver.userdata);
-	if(fd > 0 && FD_ISSET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
+// Adds a new coordinate to the stroke buffer, enlarging if necessary
+static void PushCoordinate(FcitxTablet* tablet, pt_t newpt) {
+	*tablet->strokesPtr++ = newpt;
+	if(tablet->strokesPtr == &tablet->strokesBuffer[tablet->strokesBufferSize]) { // if we overflow the buffer, increase it
+		FcitxLog(WARNING, "Resizing stroke buffer");
+		int newsize = tablet->strokesBufferSize + 1024;
+		pt_t* newbuf = (pt_t*) realloc(tablet->strokesBuffer, sizeof(pt_t)*newsize);
+		if(newbuf == NULL)
+			FcitxLog(ERROR, "Failed to allocate more stroke memory");
+		tablet->strokesBuffer = newbuf;
+		tablet->strokesPtr = &tablet->strokesBuffer[tablet->strokesBufferSize];
+		tablet->strokesBufferSize = newsize;
+	}
+}
 
+// Called when we wake up from select, i.e. the tablet has data to read
+void FcitxTabletProcess(void* arg) {
+	FcitxTablet* tablet = (FcitxTablet*) arg;
+	int fd = tablet->driverInstance->GetDescriptor(tablet->driverData);
+	// Check we woke up for the right reason
+	if(fd > 0 && FD_ISSET(fd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
 		{ // first read a packet from the raw device
 			int n = 0;
-			const int pktsize = d->drv->packet_size;
+			const int pktsize = tablet->driverInstance->packet_size;
 			do {
-				n += read(fd, &d->packet[n], pktsize - n);
+				n += read(fd, &tablet->driverPacket[n], pktsize - n);
 			} while(n < pktsize);
 		}
-
 		boolean redraw = false;
 		{ // then send it to the driver to convert into events
 			FcitxTabletDriverEvent e;
 			pt_t pt;
-			while((e = d->drv->GetEvent(d->userdata, d->packet, &pt)) != EV_NONE) {
+			while((e = tablet->driverInstance->GetEvent(tablet->driverData, tablet->driverPacket, &pt)) != EV_NONE) {
 				switch(e) {
 				case EV_PENDOWN:
 					break; // nothing
 				case EV_PENUP:
-					{ pt_t p = PT_INVALID; PushCoordinate(&tablet->strokes, p); }
+					// push an invalid (end-of-stroke) point
+					{ pt_t p = PT_INVALID; PushCoordinate(tablet, p); }
+					// get the IME to re-run the recognition engine
 					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
 					break;
 				case EV_POINT: {
-					TabletX* x = &tablet->x;
-					XMapWindow(x->dpy, x->win);
-					 XFlush(x->dpy);
-					TabletStrokes* s = &tablet->strokes;
-					if(s->ptr > s->buffer && PT_ISVALID(s->ptr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
-						XDrawLine(x->dpy, x->win, x->gc,
-									 s->ptr[-1].x * (float) x->w / (float) d->drv->x_max,
-									 s->ptr[-1].y * (float) x->h / (float) d->drv->y_max,
-									 pt.x * (float) x->w / (float) d->drv->x_max,
-									 pt.y * (float) x->h / (float) d->drv->y_max);
+					// If it's not shown already, show the character drawing window
+					// TODO don't do this for every point
+					XMapWindow(tablet->xDisplay, tablet->xWindow);
+					XFlush(tablet->xDisplay);
+					if(tablet->strokesPtr > tablet->strokesBuffer && PT_ISVALID(tablet->strokesPtr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
+						// draw the line, scaling for the size of the window
+						XDrawLine(tablet->xDisplay, tablet->xWindow, tablet->xGC,
+									 tablet->strokesPtr[-1].x * (float) tablet->xWidth / (float) tablet->driverInstance->x_max,
+									 tablet->strokesPtr[-1].y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max,
+									 pt.x * (float) tablet->xWidth / (float) tablet->driverInstance->x_max,
+									 pt.y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max);
 						redraw = true;
 					}
-					PushCoordinate(&tablet->strokes, pt);
+					PushCoordinate(tablet, pt);
 				} break;
 				default:
 					FcitxLog(ERROR, "Driver returned unknown event: %d", e);
@@ -400,28 +371,34 @@ void FcitxTabletProcess(void* arg) {
 		}
 
 		if(redraw) { // draw the stroke on the screen
-			XSync(tablet->x.dpy, 0);
+			XSync(tablet->xDisplay, 0);
 		}
 
 		FD_CLR(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));
 	}
 }
 
+// Called when the module is closed (fcitx closes)
 void FcitxTabletDestroy(void* arg) {
-	FcitxTabletPen* tablet = (FcitxTabletPen*) arg;
-	XFreeGC(tablet->x.dpy, tablet->x.gc);
-	XCloseDisplay(tablet->x.dpy);
-	tablet->driver.drv->Destroy(tablet->driver.userdata);
-	free(tablet->driver.packet);
-	free(tablet->strokes.buffer);
+	FcitxTablet* tablet = (FcitxTablet*) arg;
+	XFreeGC(tablet->xDisplay, tablet->xGC);
+	XCloseDisplay(tablet->xDisplay);
+	tablet->driverInstance->Destroy(tablet->driverData);
+	free(tablet->driverPacket);
+	free(tablet->strokesBuffer);
 }
 
 // Instantiate the event module
-FCITX_EXPORT_API
-FcitxModule module = {
+FCITX_EXPORT_API FcitxModule module = {
 	FcitxTabletCreate,
 	FcitxTabletSetFd,
 	FcitxTabletProcess,
 	FcitxTabletDestroy,
 	NULL
+};
+
+// Instantiate the IME module
+FCITX_EXPORT_API FcitxIMClass ime = {
+	FcitxTabletImeCreate,
+	FcitxTabletImeDestroy
 };
