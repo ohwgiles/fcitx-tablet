@@ -20,7 +20,7 @@ src/line.c
 	src/zinnia.c
 	src/fork.c)
 
-target_link_libraries(fcitx-tablet X11 zinnia)
+target_link_libraries(fcitx-tablet X11 Xfixes zinnia)
 
 set(CMAKE_C_FLAGS "-Wall -Wextra -Wno-sign-compare -Wno-unused-parameter -fvisibility=hidden ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wno-sign-compare -Wno-unused-parameter -fvisibility=hidden ${CMAKE_CXX_FLAGS}")

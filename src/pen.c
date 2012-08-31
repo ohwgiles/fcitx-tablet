@@ -32,7 +32,9 @@
 #include "config.h"
 #include "driver.h"
 #include "ime.h"
-
+#include <X11/Xatom.h>
+#include <X11/extensions/Xfixes.h>
+#include <X11/extensions/shapeconst.h>
 // pen.c
 // This file contains the fcitx event module. It's needed to add an fd to
 // the main select() loop to catch events from the tablet device. It also
@@ -50,7 +52,7 @@ extern FcitxTabletDriver lxbi;
 
 // Recognisers, see recog.h
 extern FcitxTabletRecogniser recogfork;
-
+extern FcitxTabletRecogniser zinnia;
 
 void* FcitxTabletCreate(FcitxInstance* instance) {
 	FcitxTabletPen* tablet = fcitx_utils_new(FcitxTabletPen);
@@ -71,13 +73,35 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 			FcitxLog(ERROR, "Unable to open X display");
 			return NULL;
 		}
+		//int blk = BlackPixel(x->dpy, DefaultScreen(x->dpy));
+		x->w = 250;
+		x->h = 150;
+		XSetWindowAttributes attrs;
+		attrs.override_redirect = True;
+		attrs.background_pixel = WhitePixel(x->dpy, DefaultScreen(x->dpy));
+		x->win = XCreateWindow(x->dpy, DefaultRootWindow(x->dpy), 0, 0, x->w, x->h, 0, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
 		x->gcv.function = GXcopy;
 		x->gcv.subwindow_mode = IncludeInferiors;
-		x->gcv.line_width = 8;
+		x->gcv.line_width = 4;
 		x->gcv.cap_style = CapRound;
 		x->gcv.join_style = JoinRound;
-		x->gc = XCreateGC(x->dpy, DefaultRootWindow(x->dpy), GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &x->gcv);
-		XSetForeground(x->dpy, x->gc, WhitePixel(x->dpy, DefaultScreen(x->dpy)));
+		x->gc = XCreateGC(x->dpy, x->win, GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &x->gcv);
+		XSetForeground(x->dpy, x->gc, BlackPixel(x->dpy, DefaultScreen(x->dpy)));
+//		Atom a = XInternAtom(x->dpy, "_NET_WM_WINDOW_TYPE", False);
+//		Atom b = XInternAtom(x->dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+//		XChangeProperty (x->dpy, x->win, a, XA_ATOM, 32, PropModeReplace, (unsigned char *) &b, 1);
+		XRectangle rect = {0,0,0,0};
+		XserverRegion region = XFixesCreateRegion(x->dpy,&rect, 1);
+		XFixesSetWindowShapeRegion(x->dpy, x->win, ShapeInput, 0, 0, region);
+		XFixesDestroyRegion(x->dpy, region);
+
+//		MWMHints mwmhints;
+//	  Atom prop;
+//	  memset(&mwmhints, 0, sizeof(mwmhints));
+//	  prop = XInternAtom(display, "_MOTIF_WM_HINTS", False);
+//	  mwmhints.flags = MWM_HINTS_DECORATIONS;
+//	  mwmhints.decorations = 0;
+//	  XChangeProperty(x->dpy, x->win, prop, prop, 32, PropModeReplace, (unsigned char *) &mwmhints, PROP_MWM_HINTS_ELEMENTS);
 	}
 
 	{ // Initialise the stroke buffer
@@ -89,8 +113,8 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 
 	{ // instantiate the recogniser
 		// TODO select from config
-		tablet->recog = &recogfork;
-		tablet->recog_ud = recogfork.Create(&tablet->conf);
+		tablet->recog = &zinnia;
+		tablet->recog_ud = zinnia.Create(&tablet->conf);
 	}
 
 	tablet->fcitx = instance;
@@ -149,11 +173,15 @@ void FcitxTabletProcess(void* arg) {
 					break;
 				case EV_POINT: {
 					TabletX* x = &tablet->x;
+					XMapWindow(x->dpy, x->win);
+					 XFlush(x->dpy);
 					TabletStrokes* s = &tablet->strokes;
-					pt.x = (float) pt.x * (float) DisplayWidth(x->dpy,0) / (float) d->drv->x_max;
-					pt.y = (float) pt.y * (float) DisplayHeight(x->dpy,0) / (float) d->drv->y_max;
 					if(s->ptr > s->buffer && PT_ISVALID(s->ptr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
-						XDrawLine(x->dpy, DefaultRootWindow(x->dpy), x->gc, s->ptr[-1].x, s->ptr[-1].y, pt.x, pt.y);
+						XDrawLine(x->dpy, x->win, x->gc,
+									 s->ptr[-1].x * (float) x->w / (float) d->drv->x_max,
+									 s->ptr[-1].y * (float) x->h / (float) d->drv->y_max,
+									 pt.x * (float) x->w / (float) d->drv->x_max,
+									 pt.y * (float) x->h / (float) d->drv->y_max);
 						redraw = true;
 					}
 					PushCoordinate(&tablet->strokes, pt);

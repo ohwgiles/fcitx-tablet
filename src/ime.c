@@ -39,6 +39,18 @@
 // from the tablet driver, calls the recognition code and updates candidates
 // or commits the string as appropriate
 
+boolean CharacterInProgress(TabletStrokes* strokes) {
+	// a character drawing is in process if the current position pointer
+	// is not at the beginning of the stroke buffer
+	return strokes->ptr != strokes->buffer;
+}
+
+void ClearCharacter(FcitxTabletPen* d) {
+	d->strokes.ptr = d->strokes.buffer;
+	XClearWindow(d->x.dpy, d->x.win);
+	XFlush(d->x.dpy);
+}
+
 INPUT_RETURN_VALUE FcitxTabletGetCandWords(void* arg);
 INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int action) {
 	// The event module uses VoidSymbol as a trigger, this means other input methods
@@ -62,15 +74,20 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 	}
 
 	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
-		if(tablet->strokes.ptr != tablet->strokes.buffer)
+		if(CharacterInProgress(&tablet->strokes)) {
+			ClearCharacter(tablet);
 			return IRV_CLEAN;
-		else
+		} else
 			return IRV_TO_PROCESS;
 	} else if(FcitxHotkeyIsHotKey(sym, action, FCITX_SPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ENTER)) {
-		if(tablet->strokes.ptr != tablet->strokes.buffer) {
-			char str[] = "test";
+		if(CharacterInProgress(&tablet->strokes)) {
+			char s[5];
+			char* candidates = tablet->recog->GetCandidates(tablet->recog_ud);
+			int l = mblen(candidates, 10);
+			memcpy(s, candidates, l);
+			s[l] = '\0';
 			FcitxInputContext* ic = FcitxInstanceGetCurrentIC(tablet->fcitx);
-			FcitxInstanceCommitString(tablet->fcitx, ic, str);
+			FcitxInstanceCommitString(tablet->fcitx, ic, s);
 			return IRV_CLEAN;
 		} else
 			return IRV_TO_PROCESS;
@@ -81,17 +98,21 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 
 // TODO maybe not needed
 boolean FcitxTabletInit(void* arg) {
+
 	return true;
 }
-
+FcitxIMClass ime;
 void FcitxTabletReset(void* arg) {
 	FcitxTabletPen* d = (FcitxTabletPen*) arg;
 	// reset stroke buffer
-	d->strokes.ptr = d->strokes.buffer;
-	d->strokes.n = 0;
+	ClearCharacter(d);
 	// get rid of the strokes covering the screen
 	// TODO programmatically
-	system("xrefresh");
+	//system("xrefresh");
+	FcitxLog(WARNING, "reset");
+
+	XUnmapWindow(d->x.dpy, d->x.win);
+	 XFlush(d->x.dpy);
 }
 
 
@@ -133,6 +154,7 @@ INPUT_RETURN_VALUE FcitxTabletGetCandWord(void* arg, FcitxCandidateWord* candWor
 }
 
 void FcitxTabletImeDestroy(void* arg) {
+	FcitxLog(WARNING, "destroy");
 }
 
 void* FcitxTabletImeCreate(FcitxInstance* instance) {

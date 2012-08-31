@@ -32,6 +32,8 @@
 // Persistent storage for data relating to X drawing
 typedef struct {
 	Display* dpy;
+	Window win;
+	int w,h;
 	GC gc;
 	XGCValues gcv;
 } TabletX;

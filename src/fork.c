@@ -106,10 +106,12 @@ void RecogForkProcess(void* ud, pt_t* points, int nPoints) {
 	// get bounding box
 	short xmin=SHRT_MAX,xmax=SHRT_MIN,ymin=SHRT_MAX,ymax=SHRT_MIN;
 	for(int i=0; i<nPoints; ++i) {
-		if(points[i].x > xmax) xmax = points[i].x;
-		if(points[i].x < xmin) xmin = points[i].x;
-		if(points[i].y > ymax) ymax = points[i].y;
-		if(points[i].y < ymin) ymin = points[i].y;
+		if(PT_ISVALID(points[i])) {
+			if(points[i].x > xmax) xmax = points[i].x;
+			if(points[i].x < xmin) xmin = points[i].x;
+			if(points[i].y > ymax) ymax = points[i].y;
+			if(points[i].y < ymin) ymin = points[i].y;
+		}
 	}
 	// add some margin
 	ymin -= 4;

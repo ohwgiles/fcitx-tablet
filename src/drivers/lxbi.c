@@ -41,8 +41,8 @@ typedef struct {
 int LxbiGetFD(void* ud) {
 	Lxbi* lx = (Lxbi*) ud;
    if(lx->fd < 0) { // try again to open FD
-      lx->fd = open("/dev/lxbi", O_RDONLY);
-   }
+		lx->fd = open("/dev/lxbi", O_RDONLY);
+	}
 	return lx->fd;
 }
 
