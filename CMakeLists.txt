@@ -13,6 +13,7 @@ include_directories(src)
 fcitx_add_addon(fcitx-tablet 
 	src/pen.c
 	src/ime.c
+src/line.c
 	src/config.c
 	src/version.c
 	src/drivers/lxbi.c
