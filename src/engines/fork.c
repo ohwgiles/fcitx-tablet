@@ -58,7 +58,6 @@ void* RecogForkCreate(FcitxTabletConfig* cfg) {
 	if(pid == 0) { // child
 		close(d->fd_candidates[0]);
 		close(d->fd_strokes[1]);
-		FcitxLog(ERROR, "stdout_fileno: %d", STDOUT_FILENO);
 		if(d->fd_candidates[1] != STDOUT_FILENO) {
 			dup2(d->fd_candidates[1], STDOUT_FILENO);
 			close(d->fd_candidates[1]);
@@ -67,7 +66,7 @@ void* RecogForkCreate(FcitxTabletConfig* cfg) {
 			dup2(d->fd_strokes[0], STDIN_FILENO);
 			close(d->fd_strokes[0]);
 		}
-		if(execl("./ccpipe","./ccpipe", NULL) < 0)
+		if(execl(cfg->ForkEngine,cfg->ForkEngine, NULL) < 0)
 			return FcitxLog(ERROR, "execl failed"), NULL;
 		//shouldn't get here
 		exit(1);

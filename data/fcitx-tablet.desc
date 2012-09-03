@@ -1,4 +1,59 @@
-[Tablet/DevicePath]
-Type=String
-Description=Path to Human Interface Device (make sure it's readable)
-DefaultValue=/dev/lxbi
+[Tablet/Driver]
+Type=Enum
+Description=Hardware interface driver
+EnumCount=1
+Enum0=lxbi
+DefaultValue=lxbi
+
+[Tablet/Engine]
+Type=Enum
+Description=Handwriting recognition engine
+EnumCount=2
+Enum0=zinnia
+Enum1=fork
+DefaultValue=zinnia
+
+[Tablet/ZinniaModel]
+Type=File
+Description=Path to Zinnia model file to use
+DefaultValue=/usr/lib/zinnia/model/tomoe/handwriting-zh_CN.model
+
+[Tablet/ForkEngine]
+Type=File
+Description=External recognition engine path
+DefaultValue=/path/to/executable
+
+[Tablet/XPos]
+Type=Integer
+Description=X coordinate of handwriting window shown on screen. Negative values are subtracted from the screen's X resolution minus the window's width
+DefaultValue=-30
+
+[Tablet/YPos]
+Type=Integer
+Description=Y coordinate of handwriting window shown on screen. Negative values are subtracted from the screen's Y resolution minus the window's height
+DefaultValue=30
+
+[Tablet/Width]
+Type=Integer
+Description=Pixel width of the handwriting window shown on screen
+DefaultValue=250
+
+[Tablet/Height]
+Type=Integer
+Description=Pixel height of the handwriting window shown on screen
+DefaultValue=150
+
+[Tablet/BorderWidth]
+Type=Integer
+Description=Border width of the handwriting window shown on screen
+DefaultValue=1
+
+[Tablet/BackgroundColour]
+Type=Color
+Description=Background colour of the handwriting window shown on screen
+DefaultValue=45 60 70
+
+[Tablet/StrokeColour]
+Type=Color
+Description=Stroke colour in the handwriting window shown on screen
+DefaultValue=210 205 185

@@ -36,7 +36,7 @@ void* ZinniaCreate(FcitxTabletConfig* cfg) {
 	Zinnia* zn = fcitx_utils_new(Zinnia);
 	zn->recog = zinnia_recognizer_new();
 	// create the engine
-	if (!zinnia_recognizer_open(zn->recog, "/usr/lib/zinnia/model/tomoe/handwriting-zh_CN.model")) {
+	if (!zinnia_recognizer_open(zn->recog, cfg->ZinniaModel)) {
 		FcitxLog(ERROR, "Could not create Zinnia engine: %s", zinnia_recognizer_strerror(zn->recog));
 		return NULL;
 	}

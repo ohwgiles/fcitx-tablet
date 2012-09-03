@@ -22,10 +22,29 @@
 
 #include <fcitx-config/fcitx-config.h>
 
+typedef enum {
+	DRIVER_LXBI = 0
+} FcitxTabletDriverType;
+
+typedef enum {
+	ENGINE_ZINNIA = 0,
+	ENGINE_FORK
+} FcitxTabletEngineType;
+
 typedef struct _FcitxTabletConfig {
 	FcitxGenericConfig config;
 	// The path to the tablet device, e.g. /dev/hidraw0
-	char* devicePath;
+	FcitxTabletDriverType Driver;
+	FcitxTabletEngineType Engine;
+	char* ZinniaModel;
+	char* ForkEngine;
+	int XPos;
+	int YPos;
+	int Width;
+	int Height;
+	int BorderWidth;
+	FcitxConfigColor BackgroundColour;
+	FcitxConfigColor StrokeColour;
 } FcitxTabletConfig;
 
 boolean FcitxTabletLoadConfig(FcitxTabletConfig* cfg);

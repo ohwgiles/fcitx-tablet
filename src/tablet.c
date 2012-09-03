@@ -29,6 +29,7 @@
 #include <X11/Xatom.h>
 #include <X11/extensions/Xfixes.h>
 #include <X11/extensions/shapeconst.h>
+#include <X11/Xcms.h>
 
 #include <fcitx/keys.h>
 #include <fcitx/candidate.h>
@@ -65,7 +66,7 @@ extern TabletEngine engZinnia;
 // The Fcitx Tablet module data members
 typedef struct {
 	// Configuration file
-	FcitxTabletConfig tabletConfig;
+	FcitxTabletConfig config;
 	// Members for xlib manipulation
 	Display* xDisplay;
 	Window xWindow;
@@ -193,11 +194,6 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 	return IRV_TO_PROCESS;
 }
 
-// TODO maybe not needed
-boolean FcitxTabletInit(void* arg) {
-	return true;
-}
-
 // This function is called whenever the client input window is changed,
 // as well as on startup. Clean the current character and hide the drawing window
 void FcitxTabletReset(void* arg) {
@@ -223,7 +219,7 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 				"Tablet",
 				"Tablet",
 				"tablet",
-				FcitxTabletInit,
+				NULL,
 				FcitxTabletReset,
 				FcitxTabletDoInput,
 				FcitxTabletGetCandWords,
@@ -240,11 +236,16 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 // Creates the event addon
 void* FcitxTabletCreate(FcitxInstance* instance) {
 	FcitxTablet* tablet = fcitx_utils_new(FcitxTablet);
-	FcitxTabletLoadConfig(&tablet->tabletConfig);
+	FcitxTabletLoadConfig(&tablet->config);
 	// TODO select driver from config, currently using lxbi
 
 	{ // Initialise the driver
-		tablet->driverInstance = &lxbi;
+		switch(tablet->config.Driver) {
+		case DRIVER_LXBI:
+			tablet->driverInstance = &lxbi;
+		break;
+		// add other drivers here
+		}
 		tablet->driverData = tablet->driverInstance->Create();
 		tablet->driverPacket = (char*) malloc(tablet->driverInstance->packet_size);
 	}
@@ -254,22 +255,37 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 			FcitxLog(ERROR, "Unable to open X display");
 			return NULL;
 		}
-		// create the window
-		tablet->xWidth = 250;
-		tablet->xHeight = 150;
+		// get dimensions
+		tablet->xWidth = tablet->config.Width;
+		tablet->xHeight = tablet->config.Height;
+		int x = tablet->config.XPos > 0 ? tablet->config.XPos : XDisplayWidth(tablet->xDisplay, DefaultScreen(tablet->xDisplay)) - tablet->xWidth + tablet->config.XPos;
+		int y = tablet->config.YPos > 0 ? tablet->config.YPos : XDisplayHeight(tablet->xDisplay, DefaultScreen(tablet->xDisplay)) - tablet->xHeight + tablet->config.YPos;
+		// create colours
+		char colourString[32];
+		sprintf(colourString,"rgb:%x/%x/%x",(int)(255*tablet->config.BackgroundColour.r),
+		  (int)(255*tablet->config.BackgroundColour.g),(int)(255*tablet->config.BackgroundColour.b));
+		XColor back;
+		XParseColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), colourString, &back);
+		XAllocColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), &back);
+		sprintf(colourString,"rgb:%x/%x/%x",(int)(255*tablet->config.StrokeColour.r),
+		  (int)(255*tablet->config.StrokeColour.g),(int)(255*tablet->config.StrokeColour.b));
+		XColor fore;
+		XParseColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), colourString, &fore);
+		XAllocColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), &fore);
+		// set window attributes and create window
 		XSetWindowAttributes attrs;
 		attrs.override_redirect = True;
-		attrs.background_pixel = WhitePixel(tablet->xDisplay, DefaultScreen(tablet->xDisplay));
-		tablet->xWindow = XCreateWindow(tablet->xDisplay, DefaultRootWindow(tablet->xDisplay), 0, 0, tablet->xWidth, tablet->xHeight, 0, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
-		// set up the line style
+		attrs.background_pixel = back.pixel;
+		tablet->xWindow = XCreateWindow(tablet->xDisplay, DefaultRootWindow(tablet->xDisplay), x, y, tablet->xWidth, tablet->xHeight, tablet->config.BorderWidth, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
+		// set up the foreground line (stroke) style
 		XGCValues gcv;
 		gcv.function = GXcopy;
 		gcv.subwindow_mode = IncludeInferiors;
-		gcv.line_width = 4;
+		gcv.line_width = 3;
 		gcv.cap_style = CapRound;
 		gcv.join_style = JoinRound;
 		tablet->xGC = XCreateGC(tablet->xDisplay, tablet->xWindow, GCFunction | GCSubwindowMode | GCLineWidth | GCCapStyle | GCJoinStyle, &gcv);
-		XSetForeground(tablet->xDisplay, tablet->xGC, BlackPixel(tablet->xDisplay, DefaultScreen(tablet->xDisplay)));
+		XSetForeground(tablet->xDisplay, tablet->xGC, fore.pixel);
 		// prevent the window from getting focus or input
 		XRectangle rect = {0,0,0,0};
 		XserverRegion region = XFixesCreateRegion(tablet->xDisplay,&rect, 1);
@@ -284,9 +300,16 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 	}
 
 	{ // instantiate the engine
-		// TODO select from config
-		tablet->engineInstance = &engZinnia;
-		tablet->engineData = engZinnia.Create(&tablet->tabletConfig);
+		switch(tablet->config.Engine) {
+		case ENGINE_ZINNIA:
+			tablet->engineInstance = &engZinnia;
+			break;
+		case ENGINE_FORK:
+			tablet->engineInstance = &engFork;
+			break;
+		// add other engines here
+		}
+		tablet->engineData = tablet->engineInstance->Create(&tablet->config);
 	}
 
 	tablet->fcitx = instance;
@@ -349,9 +372,6 @@ void FcitxTabletProcess(void* arg) {
 					break;
 				case EV_POINT: {
 					// If it's not shown already, show the character drawing window
-					// TODO don't do this for every point
-					XMapWindow(tablet->xDisplay, tablet->xWindow);
-					XFlush(tablet->xDisplay);
 					if(tablet->strokesPtr > tablet->strokesBuffer && PT_ISVALID(tablet->strokesPtr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
 						// draw the line, scaling for the size of the window
 						XDrawLine(tablet->xDisplay, tablet->xWindow, tablet->xGC,
@@ -371,7 +391,9 @@ void FcitxTabletProcess(void* arg) {
 		}
 
 		if(redraw) { // draw the stroke on the screen
-			XSync(tablet->xDisplay, 0);
+			// If it's not shown already, map the win
+			XMapWindow(tablet->xDisplay, tablet->xWindow);
+			XFlush(tablet->xDisplay);
 		}
 
 		FD_CLR(fd, FcitxInstanceGetReadFDSet(tablet->fcitx));

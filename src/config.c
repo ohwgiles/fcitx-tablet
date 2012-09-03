@@ -29,7 +29,17 @@
 
 CONFIG_DESC_DEFINE(GetFcitxTabletConfigDesc, "fcitx-tablet.desc")
 CONFIG_BINDING_BEGIN(FcitxTabletConfig);
-CONFIG_BINDING_REGISTER("Tablet", "DevicePath", devicePath);
+CONFIG_BINDING_REGISTER("Tablet", "Driver", Driver);
+CONFIG_BINDING_REGISTER("Tablet", "Engine", Engine);
+CONFIG_BINDING_REGISTER("Tablet", "ZinniaModel", ZinniaModel);
+CONFIG_BINDING_REGISTER("Tablet", "ForkEngine", ForkEngine);
+CONFIG_BINDING_REGISTER("Tablet", "XPos", XPos);
+CONFIG_BINDING_REGISTER("Tablet", "YPos", YPos);
+CONFIG_BINDING_REGISTER("Tablet", "Width", Width);
+CONFIG_BINDING_REGISTER("Tablet", "Height", Height);
+CONFIG_BINDING_REGISTER("Tablet", "BorderWidth", BorderWidth);
+CONFIG_BINDING_REGISTER("Tablet", "BackgroundColour", BackgroundColour);
+CONFIG_BINDING_REGISTER("Tablet", "StrokeColour", StrokeColour);
 CONFIG_BINDING_END();
 
 void FcitxTabletSaveConfig(FcitxTabletConfig* cfg) {
