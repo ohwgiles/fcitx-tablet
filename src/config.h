@@ -38,6 +38,7 @@ typedef struct _FcitxTabletConfig {
 	FcitxTabletEngineType Engine;
 	char* ZinniaModel;
 	char* ForkEngine;
+	int CommitCharMs;
 	int XPos;
 	int YPos;
 	int Width;

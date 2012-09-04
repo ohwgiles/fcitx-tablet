@@ -23,6 +23,11 @@ Type=File
 Description=External recognition engine path
 DefaultValue=/path/to/executable
 
+[Tablet/CommitCharMs]
+Type=Integer
+Description=Time in milliseconds after which the current character will be committed. Zero disables this feature
+DefaultValue=500
+
 [Tablet/XPos]
 Type=Integer
 Description=X coordinate of handwriting window shown on screen. Negative values are subtracted from the screen's X resolution minus the window's width

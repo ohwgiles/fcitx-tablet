@@ -33,6 +33,7 @@ CONFIG_BINDING_REGISTER("Tablet", "Driver", Driver);
 CONFIG_BINDING_REGISTER("Tablet", "Engine", Engine);
 CONFIG_BINDING_REGISTER("Tablet", "ZinniaModel", ZinniaModel);
 CONFIG_BINDING_REGISTER("Tablet", "ForkEngine", ForkEngine);
+CONFIG_BINDING_REGISTER("Tablet", "CommitCharMs", CommitCharMs);
 CONFIG_BINDING_REGISTER("Tablet", "XPos", XPos);
 CONFIG_BINDING_REGISTER("Tablet", "YPos", YPos);
 CONFIG_BINDING_REGISTER("Tablet", "Width", Width);
