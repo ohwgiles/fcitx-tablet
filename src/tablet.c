@@ -226,7 +226,7 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 	FcitxInstanceRegisterIM(
 				instance,
 				ud, //userdata
-				"Tablet",
+				"tablet",
 				"Tablet",
 				"tablet",
 				NULL,
