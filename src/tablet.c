@@ -40,6 +40,7 @@
 #include <fcitx-utils/log.h>
 #include <fcitx-config/hotkey.h>
 #include <fcitx/module.h>
+#include <fcitx/module/x11/x11stuff.h>
 #include <fcntl.h>
 
 #include "config.h"
@@ -261,32 +262,46 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 	}
 
 	{ // Initialise the X display
-		if(!(tablet->xDisplay = XOpenDisplay(NULL)))  {
+		if(NULL == (tablet->xDisplay = XOpenDisplay(NULL)))  {
 			FcitxLog(ERROR, "Unable to open X display");
 			return NULL;
 		}
 		// get dimensions
+		int screen = DefaultScreen(tablet->xDisplay);
 		tablet->xWidth = tablet->config.Width;
 		tablet->xHeight = tablet->config.Height;
-		int x = tablet->config.XPos > 0 ? tablet->config.XPos : XDisplayWidth(tablet->xDisplay, DefaultScreen(tablet->xDisplay)) - tablet->xWidth + tablet->config.XPos;
-		int y = tablet->config.YPos > 0 ? tablet->config.YPos : XDisplayHeight(tablet->xDisplay, DefaultScreen(tablet->xDisplay)) - tablet->xHeight + tablet->config.YPos;
+		int x = tablet->config.XPos > 0 ? tablet->config.XPos : XDisplayWidth(tablet->xDisplay, screen) - tablet->xWidth + tablet->config.XPos;
+		int y = tablet->config.YPos > 0 ? tablet->config.YPos : XDisplayHeight(tablet->xDisplay, screen) - tablet->xHeight + tablet->config.YPos;
 		// create colours
-		char colourString[32];
-		sprintf(colourString,"rgb:%x/%x/%x",(int)(255*tablet->config.BackgroundColour.r),
-		  (int)(255*tablet->config.BackgroundColour.g),(int)(255*tablet->config.BackgroundColour.b));
 		XColor back;
-		XParseColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), colourString, &back);
-		XAllocColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), &back);
-		sprintf(colourString,"rgb:%x/%x/%x",(int)(255*tablet->config.StrokeColour.r),
-		  (int)(255*tablet->config.StrokeColour.g),(int)(255*tablet->config.StrokeColour.b));
 		XColor fore;
-		XParseColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), colourString, &fore);
-		XAllocColor(tablet->xDisplay, DefaultColormap(tablet->xDisplay, DefaultScreen(tablet->xDisplay)), &fore);
+		{
+			char colourString[32];
+			{
+				int r = (255*tablet->config.BackgroundColour.r);
+				int g = (255*tablet->config.BackgroundColour.g);
+				int b = (255*tablet->config.BackgroundColour.b);
+				sprintf(colourString,"rgb:%x/%x/%x",r,g,b);
+			}
+			Colormap defaultCMap = DefaultColormap(tablet->xDisplay, screen);
+			XParseColor(tablet->xDisplay, defaultCMap, colourString, &back);
+			XAllocColor(tablet->xDisplay, defaultCMap, &back);
+			{
+				int r = (255*tablet->config.StrokeColour.r);
+				int g = (255*tablet->config.StrokeColour.g);
+				int b = (255*tablet->config.StrokeColour.b);
+				sprintf(colourString,"rgb:%x/%x/%x",r,g,b);
+			}
+			XParseColor(tablet->xDisplay, defaultCMap, colourString, &fore);
+			XAllocColor(tablet->xDisplay, defaultCMap, &fore);
+		}
 		// set window attributes and create window
 		XSetWindowAttributes attrs;
 		attrs.override_redirect = True;
 		attrs.background_pixel = back.pixel;
-		tablet->xWindow = XCreateWindow(tablet->xDisplay, DefaultRootWindow(tablet->xDisplay), x, y, tablet->xWidth, tablet->xHeight, tablet->config.BorderWidth, CopyFromParent, InputOutput, CopyFromParent, CWBackPixel| CWOverrideRedirect, &attrs);
+		tablet->xWindow = XCreateWindow(tablet->xDisplay, DefaultRootWindow(tablet->xDisplay),
+			 x, y, tablet->xWidth, tablet->xHeight, tablet->config.BorderWidth, CopyFromParent,
+			 InputOutput, CopyFromParent, CWBackPixel | CWOverrideRedirect, &attrs);
 		// set up the foreground line (stroke) style
 		XGCValues gcv;
 		gcv.function = GXcopy;
