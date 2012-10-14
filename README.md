@@ -7,5 +7,9 @@ fcitx-tablet is easily extensible for different tablet drivers. Currently it onl
 
 fcitx-tablet is easily extensible for different handwriting recognition engines. Currently it supports [zinnia](http://zinnia.sourceforge.net/) (however results are fairly poor) and forking to an external (potentially proprietary) recognition engine.
 
+<<<<<<< HEAD
 See a demo video [here](fcitx-tablet/blob/media/tablet-lxbi-demo.m4v)
+=======
+See a demo video [here](blob/media/tablet-lxbi-demo.m4v)
+>>>>>>> 5a241e6c91b3ae5ddfa13ec2e787a585af5a2d17
 
