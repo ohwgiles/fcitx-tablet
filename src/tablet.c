@@ -41,6 +41,7 @@
 #include <fcitx-config/hotkey.h>
 #include <fcitx/module.h>
 #include <fcitx/module/x11/x11stuff.h>
+#include <fcitx/module/x11/fcitx-x11.h>
 #include <fcntl.h>
 
 #include "config.h"
@@ -262,7 +263,7 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 	}
 
 	{ // Initialise the X display
-		if(NULL == (tablet->xDisplay = XOpenDisplay(NULL)))  {
+		if(NULL == (tablet->xDisplay = FcitxX11GetDisplay(instance)))  {
 			FcitxLog(ERROR, "Unable to open X display");
 			return NULL;
 		}
