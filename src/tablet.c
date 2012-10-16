@@ -87,6 +87,7 @@ typedef struct {
 	// timeout when inputting a stroke
 	int timeoutFd;
 	struct itimerspec delay;
+	boolean timeoutCommitPending;
 	// Recognition engine
 	TabletEngine* engineInstance;
 	void* engineData;
@@ -344,6 +345,7 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		tablet->delay.it_interval.tv_nsec = 0;
 		tablet->delay.it_value.tv_sec = tablet->config.CommitCharMs / 1000;
 		tablet->delay.it_value.tv_nsec = (tablet->config.CommitCharMs % 1000) * 1000000;
+		tablet->timeoutCommitPending = 0;
 	}
 
 	tablet->fcitx = instance;
@@ -404,7 +406,11 @@ void FcitxTabletProcess(void* arg) {
 				timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
 				switch(e) {
 				case EV_PENDOWN:
-					break; // nothing
+					if(tablet->timeoutCommitPending) {
+						FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_COMMIT);
+						tablet->timeoutCommitPending = false;
+					}
+					break;
 				case EV_PENUP: {
 					// push an invalid (end-of-stroke) point
 					pt_t p = PT_INVALID;
@@ -444,8 +450,8 @@ void FcitxTabletProcess(void* arg) {
 	}
 
 	if(FD_ISSET(tablet->timeoutFd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
-		// the commit character timer has expired. Send a commit to the IME
-		FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_COMMIT);
+		// the timer expired. Set the flag so that the next pendown will commit the most likely character
+		tablet->timeoutCommitPending = true;
 		timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
 		FD_CLR(tablet->timeoutFd, FcitxInstanceGetReadFDSet(tablet->fcitx));
 	}
