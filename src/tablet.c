@@ -84,10 +84,10 @@ typedef struct {
 	pt_t* strokesBuffer; // start of buffer
 	pt_t* strokesPtr; // moving pointer
 	unsigned strokesBufferSize;
+	boolean candidatesPending;
 	// timeout when inputting a stroke
 	int timeoutFd;
 	struct itimerspec delay;
-	boolean timeoutCommitPending;
 	// Recognition engine
 	TabletEngine* engineInstance;
 	void* engineData;
@@ -98,7 +98,7 @@ typedef struct {
 // Possible actions for the input method, triggered by tablet events
 // such as timeouts and penups. See FcitxTabletProcess
 typedef enum {
-	IME_RECOGNISE,
+	IME_DISPLAYCANDIDATES,
 	IME_COMMIT
 } ImeAction;
 
@@ -108,10 +108,18 @@ static boolean CharacterInProgress(FcitxTablet* tablet) {
 	return tablet->strokesPtr != tablet->strokesBuffer;
 }
 
+// used to cancel a running timer
+static struct itimerspec empty_timer = { {0, 0}, {0, 0} };
+
 // Clears the little window and resets the stroke buffer
-static void ClearCharacter(FcitxTablet* tablet) {
+static void ClearCharacter(FcitxTablet* tablet, boolean cancelPending) {
 	tablet->strokesPtr = tablet->strokesBuffer;
-	XClearWindow(tablet->xDisplay, tablet->xWindow);
+	//XClearWindow(tablet->xDisplay, tablet->xWindow);
+	tablet->candidatesPending = !cancelPending;
+	// clear the timer
+	timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
+	// destroy the popup window
+	XUnmapWindow(tablet->xDisplay, tablet->xWindow);
 	XFlush(tablet->xDisplay);
 }
 
@@ -162,6 +170,7 @@ static void CommitFirstCandidate(FcitxTablet* tablet) {
 	memcpy(s, candidates, l);
 	s[l] = '\0';
 	FcitxInstanceCommitString(tablet->fcitx, FcitxInstanceGetCurrentIC(tablet->fcitx), s);
+	timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
 }
 
 // This function is called from within fcitx. It is called when user
@@ -175,14 +184,9 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 		// Depending on the tablet driver, we could add more actions, for
 		// example selecting candidates via the tablet
 		switch(action) {
-		case IME_RECOGNISE:
-			tablet->engineInstance->Process(tablet->engineData, tablet->strokesBuffer, (tablet->strokesPtr - tablet->strokesBuffer));
-			// call into recognition library, update candidate lists
+		case IME_DISPLAYCANDIDATES:
+			tablet->candidatesPending = true;
 			return IRV_DISPLAY_CANDWORDS;
-			break;
-		case IME_COMMIT:
-			CommitFirstCandidate(tablet);
-			return IRV_CLEAN;
 			break;
 		default:
 			FcitxLog(ERROR, "IME asked to perform unknown action");
@@ -192,17 +196,33 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
 		if(CharacterInProgress(tablet)) {
 			// scrap the current character
-			ClearCharacter(tablet);
-			CommitFirstCandidate(tablet);
+			ClearCharacter(tablet, true);
+			// hide candidate window
 			return IRV_CLEAN;
 		} else
 			return IRV_TO_PROCESS;
 	} else if(FcitxHotkeyIsHotKey(sym, action, FCITX_SPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ENTER)) {
 		if(CharacterInProgress(tablet)) {
 			// commit the current character
+			CommitFirstCandidate(tablet);
+			ClearCharacter(tablet, true);
 			return IRV_CLEAN;
-		} else
+		} else if(tablet->candidatesPending)
+			return IRV_CLEAN;
+		else
 			return IRV_TO_PROCESS;
+	}
+
+	if(FcitxHotkeyIsHotKeyDigit(sym, action) && tablet->candidatesPending) {
+		int k = FcitxHotkeyCheckChooseKey(sym,action,DIGIT_STR_CHOOSE);
+		if(k >= 0) {
+			FcitxInputState* state = FcitxInstanceGetInputState(tablet->fcitx);
+			FcitxCandidateWordList* candidates = FcitxInputStateGetCandidateList(state);
+			if(!CharacterInProgress(tablet))
+				FcitxInstanceForwardKey(tablet->fcitx, FcitxInstanceGetCurrentIC(tablet->fcitx), FCITX_PRESS_KEY, FcitxKey_BackSpace, 0);
+			ClearCharacter(tablet, true);
+			return FcitxCandidateWordChooseByIndex(candidates, k);
+		}
 	}
 	return IRV_TO_PROCESS;
 }
@@ -212,10 +232,7 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 void FcitxTabletReset(void* arg) {
 	FcitxTablet* tablet = (FcitxTablet*) arg;
 	// reset stroke buffer
-	ClearCharacter(tablet);
-	// destroy the popup window
-	XUnmapWindow(tablet->xDisplay, tablet->xWindow);
-	XFlush(tablet->xDisplay);
+	ClearCharacter(tablet, true);
 }
 
 void FcitxTabletImeDestroy(void* arg) {
@@ -229,19 +246,19 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 	FcitxInstanceRegisterIM(
 				instance,
 				ud, //userdata
-				"tablet",
-				"Tablet",
-				"tablet",
-				NULL,
-				FcitxTabletReset,
-				FcitxTabletDoInput,
-				FcitxTabletGetCandWords,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				1,
-				"zh_CN"
+				"tablet", //uniqueName
+				"Tablet", //name
+				"tablet", //iconName
+				NULL,     //Init
+				FcitxTabletReset, //Reset
+				FcitxTabletDoInput, //DoInput
+				FcitxTabletGetCandWords, //GetCandWords
+				NULL, //PhraseTips
+				NULL, //Save
+				NULL, //ReloadConfig
+				NULL, //KeyBlocker
+				1, //Priority
+				"zh_CN" //langCode
 				);
 	return ud;
 }
@@ -338,6 +355,8 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		}
 		tablet->engineData = tablet->engineInstance->Create(&tablet->config);
 	}
+	
+	tablet->candidatesPending = false;
 
 	{ // set up the timerfd
 		tablet->timeoutFd = timerfd_create(CLOCK_MONOTONIC, 0);
@@ -345,7 +364,6 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		tablet->delay.it_interval.tv_nsec = 0;
 		tablet->delay.it_value.tv_sec = tablet->config.CommitCharMs / 1000;
 		tablet->delay.it_value.tv_nsec = (tablet->config.CommitCharMs % 1000) * 1000000;
-		tablet->timeoutCommitPending = 0;
 	}
 
 	tablet->fcitx = instance;
@@ -385,7 +403,6 @@ static void PushCoordinate(FcitxTablet* tablet, pt_t newpt) {
 
 // Called when we wake up from select, i.e. the tablet has data to read
 void FcitxTabletProcess(void* arg) {
-	static struct itimerspec empty_timer = { {0, 0}, {0, 0} };
 	FcitxTablet* tablet = (FcitxTablet*) arg;
 	int fd = tablet->driverInstance->GetDescriptor(tablet->driverData);
 	// Check we woke up for the right reason
@@ -406,17 +423,16 @@ void FcitxTabletProcess(void* arg) {
 				timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
 				switch(e) {
 				case EV_PENDOWN:
-					if(tablet->timeoutCommitPending) {
-						FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_COMMIT);
-						tablet->timeoutCommitPending = false;
-					}
+					// do nothing
 					break;
 				case EV_PENUP: {
 					// push an invalid (end-of-stroke) point
 					pt_t p = PT_INVALID;
 					PushCoordinate(tablet, p);
-					// get the IME to re-run the recognition engine
-					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_RECOGNISE);
+					// run the recognition engine
+					tablet->engineInstance->Process(tablet->engineData, tablet->strokesBuffer, (tablet->strokesPtr - tablet->strokesBuffer));
+					// If we're using the IME, show the candidate window
+					FcitxInstanceProcessKey(tablet->fcitx, FCITX_PRESS_KEY, 0, FcitxKey_VoidSymbol, IME_DISPLAYCANDIDATES);
 					// start the stroke commit timer
 					timerfd_settime(tablet->timeoutFd, 0, &tablet->delay, NULL);
 				} break;
@@ -431,6 +447,7 @@ void FcitxTabletProcess(void* arg) {
 									 pt.y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max);
 						redraw = true;
 					}
+					XWarpPointer(tablet->xDisplay, None, XRootWindow(tablet->xDisplay,XDefaultScreen(tablet->xDisplay)), 0, 0, 0, 0, pt.x, pt.y);
 					PushCoordinate(tablet, pt);
 				} break;
 				default:
@@ -451,9 +468,10 @@ void FcitxTabletProcess(void* arg) {
 
 	if(FD_ISSET(tablet->timeoutFd, FcitxInstanceGetReadFDSet(tablet->fcitx))) {
 		// the timer expired. Set the flag so that the next pendown will commit the most likely character
-		tablet->timeoutCommitPending = true;
 		timerfd_settime(tablet->timeoutFd, 0, &empty_timer, NULL);
 		FD_CLR(tablet->timeoutFd, FcitxInstanceGetReadFDSet(tablet->fcitx));
+		CommitFirstCandidate(tablet);
+		ClearCharacter(tablet, false);
 	}
 }
 
