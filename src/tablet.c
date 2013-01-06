@@ -410,8 +410,15 @@ void FcitxTabletProcess(void* arg) {
 		{ // first read a packet from the raw device
 			int n = 0;
 			const int pktsize = tablet->driverInstance->packet_size;
+			errno = 0;
 			do {
 				n += read(fd, &tablet->driverPacket[n], pktsize - n);
+				if(errno) {
+					FcitxLog(ERROR, "Error %d, attempting to recreate driver");
+					tablet->driverInstance->Destroy(tablet->driverData);
+					tablet->driverData = tablet->driverInstance->Create();
+					return;
+				}
 			} while(n < pktsize);
 		}
 		boolean redraw = false;
