@@ -9,6 +9,8 @@ include_directories (${FCITX4_FCITX_UTILS_INCLUDE_DIRS})
 
 add_definitions( -DLOCALEDIR=\"${CMAKE_INSTALL_PREFIX}/share/locale\" -std=gnu99)
 
+set(WITH_MOUSE_WARPING FALSE CACHE BOOL "Tablet may act as mouse via XWarpPointer")
+
 include_directories(src)
 fcitx_add_addon(fcitx-tablet 
 	src/config.c
@@ -21,8 +23,11 @@ fcitx_add_addon(fcitx-tablet
 
 target_link_libraries(fcitx-tablet X11 Xfixes zinnia)
 
-set(CMAKE_C_FLAGS "-Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden ${CMAKE_CXX_FLAGS}")
+if(WITH_MOUSE_WARPING)
+	set(MOUSE_WARP_CFLAGS "-DWITH_MOUSE_WARPING")
+endif(WITH_MOUSE_WARPING)
+
+set(CMAKE_C_FLAGS "-Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden ${MOUSE_WARP_CFLAGS} ${CMAKE_C_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--as-needed ${CMAKE_SHARED_LINKER_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "-Wl,--as-needed ${CMAKE_MODULE_LINKER_FLAGS}")
 

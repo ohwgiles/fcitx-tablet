@@ -84,13 +84,16 @@ typedef struct {
 	pt_t* strokesBuffer; // start of buffer
 	pt_t* strokesPtr; // moving pointer
 	unsigned strokesBufferSize;
-	boolean candidatesPending;
 	// timeout when inputting a stroke
 	int timeoutFd;
 	struct itimerspec delay;
+	boolean candidatesPending;
 	// Recognition engine
 	TabletEngine* engineInstance;
 	void* engineData;
+#ifdef WITH_MOUSE_WARPING
+	boolean warping;
+#endif
 	// The main fcitx instance
 	FcitxInstance* fcitx;
 } FcitxTablet;
@@ -365,15 +368,18 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 		tablet->engineData = tablet->engineInstance->Create(&tablet->config);
 	}
 	
-	tablet->candidatesPending = false;
-
 	{ // set up the timerfd
 		tablet->timeoutFd = timerfd_create(CLOCK_MONOTONIC, 0);
 		tablet->delay.it_interval.tv_sec = 0;
 		tablet->delay.it_interval.tv_nsec = 0;
 		tablet->delay.it_value.tv_sec = tablet->config.CommitCharMs / 1000;
 		tablet->delay.it_value.tv_nsec = (tablet->config.CommitCharMs % 1000) * 1000000;
+		tablet->candidatesPending = false;
 	}
+
+#ifdef WITH_MOUSE_WARPING
+	tablet->warping = false;
+#endif
 
 	tablet->fcitx = instance;
 	return tablet;
@@ -463,7 +469,10 @@ void FcitxTabletProcess(void* arg) {
 									 pt.y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max);
 						redraw = true;
 					}
-					XWarpPointer(tablet->xDisplay, None, XRootWindow(tablet->xDisplay,XDefaultScreen(tablet->xDisplay)), 0, 0, 0, 0, pt.x, pt.y);
+#ifdef WITH_MOUSE_WARPING
+					if(tablet->warping)
+						XWarpPointer(tablet->xDisplay, None, XRootWindow(tablet->xDisplay,XDefaultScreen(tablet->xDisplay)), 0, 0, 0, 0, pt.x, pt.y);
+#endif
 					PushCoordinate(tablet, pt);
 				} break;
 				default:
