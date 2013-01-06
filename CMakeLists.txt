@@ -21,8 +21,8 @@ fcitx_add_addon(fcitx-tablet
 
 target_link_libraries(fcitx-tablet X11 Xfixes zinnia)
 
-set(CMAKE_C_FLAGS "-Wall -Wextra -Wno-sign-compare -Wno-unused-parameter -fvisibility=hidden ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wno-sign-compare -Wno-unused-parameter -fvisibility=hidden ${CMAKE_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "-Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden ${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden ${CMAKE_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--as-needed ${CMAKE_SHARED_LINKER_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "-Wl,--as-needed ${CMAKE_MODULE_LINKER_FLAGS}")
 

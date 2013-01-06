@@ -123,7 +123,7 @@ void ZinniaProcess(void* ud, pt_t* points, int nPoints) {
 char* ZinniaGetCandidates(void* ud) {
 	Zinnia* zn = (Zinnia*) ud;
 	char* p = zn->candidates;
-	for (int i = 0; i < zinnia_result_size(zn->result); ++i)
+	for (unsigned int i = 0; i < zinnia_result_size(zn->result); ++i)
 		p = stpcpy(p, zinnia_result_value(zn->result, i));
 	return zn->candidates;
 }
