@@ -192,14 +192,23 @@ INPUT_RETURN_VALUE FcitxTabletDoInput(void* arg, FcitxKeySym sym, unsigned int a
 			FcitxLog(ERROR, "IME asked to perform unknown action");
 		}
 	}
-	// Backspace and spacebar need to be handled specially
-	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
+	// Backspace,escape,enter and spacebar need to be handled specially
+	if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ESCAPE)) {
 		if(CharacterInProgress(tablet)) {
 			// scrap the current character
 			ClearCharacter(tablet, true);
 			// hide candidate window
 			return IRV_CLEAN;
-		} else
+		} else if(tablet->candidatesPending) {
+			// scrap the current character
+			ClearCharacter(tablet, true);
+			// slight variant of behaviour here. backspace should delete a candidate-pending committed character but escape should not
+			if(FcitxHotkeyIsHotKey(sym, action, FCITX_BACKSPACE)) {
+				// character has already been committed, so we have to delete it. We can't return IRV_TO_PROCESS since we need IRV_CLEAN
+				FcitxInstanceForwardKey(tablet->fcitx, FcitxInstanceGetCurrentIC(tablet->fcitx), FCITX_PRESS_KEY, FcitxKey_BackSpace, 0);
+			}
+			return IRV_CLEAN;
+		} else // normal behaviour
 			return IRV_TO_PROCESS;
 	} else if(FcitxHotkeyIsHotKey(sym, action, FCITX_SPACE) || FcitxHotkeyIsHotKey(sym, action, FCITX_ENTER)) {
 		if(CharacterInProgress(tablet)) {
