@@ -1,1 +1,1 @@
-install(FILES 70-lxbi.rules DESTINATION /etc/udev/rules.d/)
+install(FILES 70-gotop.rules DESTINATION /etc/udev/rules.d/)

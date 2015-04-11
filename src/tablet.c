@@ -61,11 +61,13 @@
 // more long-lived than the IME class.
 
 // Drivers, see driver.h
-extern FcitxTabletDriver lxbi;
+extern FcitxTabletDriver gotop;
 
 // Engines, see engine.h
 extern TabletEngine engFork;
+#ifdef WITH_ZINNIA
 extern TabletEngine engZinnia;
+#endif
 
 // The Fcitx Tablet module data members
 typedef struct {
@@ -279,16 +281,15 @@ void* FcitxTabletImeCreate(FcitxInstance* instance) {
 void* FcitxTabletCreate(FcitxInstance* instance) {
 	FcitxTablet* tablet = fcitx_utils_new(FcitxTablet);
 	FcitxTabletLoadConfig(&tablet->config);
-	// TODO select driver from config, currently using lxbi
 
 	{ // Initialise the driver
 		switch(tablet->config.Driver) {
-		case DRIVER_LXBI:
-			tablet->driverInstance = &lxbi;
+		case DRIVER_GOTOP:
+			tablet->driverInstance = &gotop;
 		break;
 		// add other drivers here
 		}
-		tablet->driverData = tablet->driverInstance->Create();
+		tablet->driverData = tablet->driverInstance->Create(tablet->config.DriverDevice);
 		tablet->driverPacket = (char*) malloc(tablet->driverInstance->packet_size);
 	}
 
@@ -357,9 +358,11 @@ void* FcitxTabletCreate(FcitxInstance* instance) {
 
 	{ // instantiate the engine
 		switch(tablet->config.Engine) {
+#ifdef WITH_ZINNIA
 		case ENGINE_ZINNIA:
 			tablet->engineInstance = &engZinnia;
 			break;
+#endif
 		case ENGINE_FORK:
 			tablet->engineInstance = &engFork;
 			break;
@@ -431,7 +434,7 @@ void FcitxTabletProcess(void* arg) {
 				if(errno) {
 					FcitxLog(ERROR, "Error %d, attempting to recreate driver");
 					tablet->driverInstance->Destroy(tablet->driverData);
-					tablet->driverData = tablet->driverInstance->Create();
+					tablet->driverData = tablet->driverInstance->Create(tablet->config.DriverDevice);
 					return;
 				}
 			} while(n < pktsize);
@@ -459,14 +462,18 @@ void FcitxTabletProcess(void* arg) {
 					timerfd_settime(tablet->timeoutFd, 0, &tablet->delay, NULL);
 				} break;
 				case EV_POINT: {
+					pt.x -= tablet->config.DriverXMin;
+					pt.y -= tablet->config.DriverYMin;
+					float driverWidth = (tablet->config.DriverXMax - tablet->config.DriverXMin);
+					float driverHeight = (tablet->config.DriverYMax - tablet->config.DriverYMin);
 					// If it's not shown already, show the character drawing window
 					if(tablet->strokesPtr > tablet->strokesBuffer && PT_ISVALID(tablet->strokesPtr[-1]) && PT_ISVALID(pt)) { //we have at least 2 valid new points
 						// draw the line, scaling for the size of the window
 						XDrawLine(tablet->xDisplay, tablet->xWindow, tablet->xGC,
-									 tablet->strokesPtr[-1].x * (float) tablet->xWidth / (float) tablet->driverInstance->x_max,
-									 tablet->strokesPtr[-1].y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max,
-									 pt.x * (float) tablet->xWidth / (float) tablet->driverInstance->x_max,
-									 pt.y * (float) tablet->xHeight / (float) tablet->driverInstance->y_max);
+									 tablet->strokesPtr[-1].x * (float) tablet->xWidth / driverWidth,
+									 tablet->strokesPtr[-1].y * (float) tablet->xHeight / driverHeight,
+									 pt.x * (float) tablet->xWidth / (float) (tablet->config.DriverXMax - tablet->config.DriverXMin),
+									 pt.y * (float) tablet->xHeight / (float) (tablet->config.DriverYMax - tablet->config.DriverYMin));
 						redraw = true;
 					}
 #ifdef WITH_MOUSE_WARPING

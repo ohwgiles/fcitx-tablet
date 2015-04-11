@@ -30,6 +30,11 @@
 CONFIG_DESC_DEFINE(GetFcitxTabletConfigDesc, "fcitx-tablet.desc")
 CONFIG_BINDING_BEGIN(FcitxTabletConfig);
 CONFIG_BINDING_REGISTER("Tablet", "Driver", Driver);
+CONFIG_BINDING_REGISTER("Tablet", "DriverDevice", DriverDevice);
+CONFIG_BINDING_REGISTER("Tablet", "DriverXMin", DriverXMin);
+CONFIG_BINDING_REGISTER("Tablet", "DriverYMin", DriverYMin);
+CONFIG_BINDING_REGISTER("Tablet", "DriverXMax", DriverXMax);
+CONFIG_BINDING_REGISTER("Tablet", "DriverYMax", DriverYMax);
 CONFIG_BINDING_REGISTER("Tablet", "Engine", Engine);
 CONFIG_BINDING_REGISTER("Tablet", "ZinniaModel", ZinniaModel);
 CONFIG_BINDING_REGISTER("Tablet", "ForkEngine", ForkEngine);

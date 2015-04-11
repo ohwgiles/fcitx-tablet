@@ -23,18 +23,25 @@
 #include <fcitx-config/fcitx-config.h>
 
 typedef enum {
-	DRIVER_LXBI = 0
+	DRIVER_GOTOP = 0
 } FcitxTabletDriverType;
 
 typedef enum {
+#ifdef WITH_ZINNIA
 	ENGINE_ZINNIA = 0,
-	ENGINE_FORK
+#endif
+	ENGINE_FORK = 1
 } FcitxTabletEngineType;
 
 typedef struct _FcitxTabletConfig {
 	FcitxGenericConfig config;
-	// The path to the tablet device, e.g. /dev/hidraw0
 	FcitxTabletDriverType Driver;
+	// The path to the tablet device, e.g. /dev/hidraw0
+	const char* DriverDevice;
+	int DriverXMin;
+	int DriverYMin;
+	int DriverXMax;
+	int DriverYMax;
 	FcitxTabletEngineType Engine;
 	char* ZinniaModel;
 	char* ForkEngine;

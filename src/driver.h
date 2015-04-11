@@ -32,12 +32,10 @@ typedef enum {
 
 // Interfaces implemented by a tablet driver
 typedef struct _FcitxTabletDriver {
-	void* (*Create)();
+	void* (*Create)(const char* dev);
 	// get the file descriptor of the device, to put into select()
 	int (*GetDescriptor)(void*);
 	unsigned packet_size; // the amount of bytes to read from the fd
-	unsigned x_max; // maximum X value, needed to perform scaling
-	unsigned y_max;
 	// get an event. The first argument is userdata, the second is the
 	// raw data buffer from the tablet. If the event is EV_POINT,
 	// this function should set the coordinates in the third argument

@@ -23,73 +23,73 @@
 #include <fcitx-utils/log.h>
 #include "driver.h"
 
-// lxbi.c
-// Basic reverse engineered tablet driver.
-// LXBI 智能笔 手写识别系统
-// I bought it for 50块 in 2012 from 中关村 in 北京
-// Appears to contain 08f2:6370 Gotop Information Inc
-// See rules/70-lxbi.rules
+// gotop.c
+// Basic reverse engineered driver
+// for tablets with 08f2:6370 Gotop Information Inc
+// Tested with
+// - LXBI 智能笔 手写识别系统
+// - UnisCom CR-360
+// See rules/70-gotop.rules
 
-typedef enum { LXBI_UP, LXBI_DOWN } LxbiState;
+typedef enum { GOTOP_UP, GOTOP_DOWN } GotopState;
 typedef struct {
+	const char* dev;
 	int fd;
 	short last_x;
 	short last_y;
-	LxbiState st;
-} Lxbi;
+	GotopState st;
+} Gotop;
 
-int LxbiGetFD(void* ud) {
-	Lxbi* lx = (Lxbi*) ud;
-   if(lx->fd < 0) { // try again to open FD
-		lx->fd = open("/dev/lxbi", O_RDONLY);
+int GotopGetFD(void* ud) {
+	Gotop* gt = (Gotop*) ud;
+    if(gt->fd < 0) { // try again to open FD
+		gt->fd = open(gt->dev, O_RDONLY);
 	}
-	return lx->fd;
+	return gt->fd;
 }
 
-void* LxbiCreate() {
-	Lxbi* lx = fcitx_utils_new(Lxbi);
-	lx->st = LXBI_UP;
-   lx->fd = -1;
-   LxbiGetFD(lx);
-	return lx;
+void* GotopCreate(const char* dev) {
+	Gotop* gt = fcitx_utils_new(Gotop);
+	gt->dev = dev;
+    gt->fd = -1;
+	gt->st = GOTOP_UP;
+    GotopGetFD(gt);
+	return gt;
 }
 
-void LxbiDestroy(void* ud) {
-	Lxbi* lx = (Lxbi*) ud;
-	free(lx);
+void GotopDestroy(void* ud) {
+	Gotop* gt = (Gotop*) ud;
+	free(gt);
 }
 
-FcitxTabletDriverEvent LxbiGetEvent(void* ud, const char* buffer, pt_t* pt) {
-	Lxbi* lx = (Lxbi*) ud;
+FcitxTabletDriverEvent GotopGetEvent(void* ud, const char* buffer, pt_t* pt) {
+	Gotop* gt = (Gotop*) ud;
 	static const unsigned short XMASK = 0x281a;
 	static const unsigned short YMASK = 0x3010;
 	short x = ( (buffer[2]<<8) | (0xff&buffer[1]) ) ^ XMASK;
 	short y = ( (buffer[4]<<8) | (0xff&buffer[3]) ) ^ YMASK;
 	//collapse repeated events
-	if(x == lx->last_x && y == lx->last_y) return EV_NONE;
-	lx->last_x = x;
-	lx->last_y = y;
+	if(x == gt->last_x && y == gt->last_y) return EV_NONE;
+	gt->last_x = x;
+	gt->last_y = y;
 	if(x == 0 && y == 0) {
-		if(lx->st == LXBI_UP) return EV_NONE;
-		lx->st = LXBI_UP;
+		if(gt->st == GOTOP_UP) return EV_NONE;
+		gt->st = GOTOP_UP;
 		return EV_PENUP;
 	}
-	if(lx->st == LXBI_UP) {
-		lx->st = LXBI_DOWN;
+	if(gt->st == GOTOP_UP) {
+		gt->st = GOTOP_DOWN;
 		return EV_PENDOWN;
 	}
-	// x E (130,1437), y E (394,1230)
-	pt->x = x - 130;
-	pt->y = y - 394;
+	pt->x = x;
+	pt->y = y;
 	return EV_POINT;
 }
 
-FcitxTabletDriver lxbi = {
-	LxbiCreate,
-	LxbiGetFD,
+FcitxTabletDriver gotop = {
+	GotopCreate,
+	GotopGetFD,
 	8,
-	1307,
-	836,
-	LxbiGetEvent,
-	LxbiDestroy
+	GotopGetEvent,
+	GotopDestroy
 };

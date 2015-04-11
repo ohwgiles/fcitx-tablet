@@ -2,8 +2,33 @@
 Type=Enum
 Description=Hardware interface driver
 EnumCount=1
-Enum0=lxbi
-DefaultValue=lxbi
+Enum0=gotop
+DefaultValue=gotop
+
+[Tablet/DriverDevice]
+Type=String
+Description=Path to device node
+DefaultValue=/dev/gotop
+
+[Tablet/DriverXMin]
+Type=Integer
+Description=Calibration: minimum x value
+DefaultValue=130
+
+[Tablet/DriverYMin]
+Type=Integer
+Description=Calibration: minimum y value
+DefaultValue=394
+
+[Tablet/DriverXMax]
+Type=Integer
+Description=Calibration: maximum x value
+DefaultValue=1437
+
+[Tablet/DriverYMax]
+Type=Integer
+Description=Calibration: maximum y value
+DefaultValue=1230
 
 [Tablet/Engine]
 Type=Enum

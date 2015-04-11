@@ -1,1 +1,0 @@
-ATTRS{idVendor}=="08f2",ATTRS{idProduct}=="6370",SYMLINK+="lxbi",MODE="0660",GROUP="video" 
